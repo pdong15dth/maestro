@@ -6,9 +6,10 @@ import { getLanguageFromPath } from '@/lib/utils';
 interface CodeEditorProps {
   filePath: string;
   initialCode?: string;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
+export function CodeEditor({ filePath, initialCode = '', onDirtyChange }: CodeEditorProps) {
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
   const { readFile, writeFile } = useWorkspace();
@@ -27,9 +28,11 @@ export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
         }
       })
       .catch((err) => {
-        console.error('Failed to read file:', err);
+        // Use warn instead of error to avoid triggering Next.js dev overlay
+        console.warn('Failed to read file:', err);
         if (!cancelled) {
-          setContent(`// Error loading ${filePath}\n// ${err}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          setContent(`// Error loading ${filePath}\n// ${msg}`);
           setIsLoaded(true);
         }
       });
@@ -44,7 +47,7 @@ export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
         const currentValue = editor.getValue();
         writeFile(filePath, currentValue).catch((err) => {
-          console.error('Failed to save file:', err);
+          console.warn('Failed to save file:', err);
         });
       });
     }
@@ -69,7 +72,10 @@ export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
         language={language}
         path={filePath}
         value={content}
-        onChange={(value) => setContent(value || '')}
+        onChange={(value) => {
+          setContent(value || '');
+          onDirtyChange?.(value !== content);
+        }}
         onMount={handleEditorDidMount}
         options={{
           minimap: { enabled: false },

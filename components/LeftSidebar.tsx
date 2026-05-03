@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  FolderGit2, Bot, ChevronDown, FolderOpen, History, Loader2, Settings, ChevronRight
+  FolderGit2, Bot, ChevronDown, FolderOpen, History, Loader2, ChevronRight,
+  FilePlus, FolderPlus, Trash2, Edit3
 } from 'lucide-react';
 import { NomoFileIcon } from './NomoFileIcon';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -12,18 +13,28 @@ interface FileTreeNodeProps {
   node: FileNode;
   depth?: number;
   onFileClick: (node: FileNode) => void;
+  onSelect: (path: string) => void;
+  selectedPath: string | null;
 }
 
-function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
+function FileTreeNode({ node, depth = 0, onFileClick, onSelect, selectedPath }: FileTreeNodeProps) {
   const [expanded, setExpanded] = useState(false);
+  const isSelected = selectedPath === node.path;
 
   if (node.isDirectory) {
     return (
       <div>
         <div
-          className="flex items-center mb-1 hover:text-zinc-300 cursor-pointer transition-colors duration-150 select-none"
+          className={cn(
+            "flex items-center mb-1 hover:text-[#FAFAFA] cursor-pointer transition-colors duration-150 select-none rounded-none px-1 -ml-1",
+            isSelected ? "bg-[#A3E635]/10 text-[#A3E635]" : "text-zinc-400"
+          )}
           style={{ paddingLeft: `${depth * 12}px` }}
-          onClick={() => setExpanded(!expanded)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(!expanded);
+            onSelect(node.path);
+          }}
         >
           <ChevronRight className={`w-3 h-3 mr-1 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
           <NomoFileIcon
@@ -44,7 +55,14 @@ function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
               transition={{ duration: 0.15 }}
             >
               {node.children.map((child) => (
-                <FileTreeNode key={child.path} node={child} depth={depth + 1} onFileClick={onFileClick} />
+                <FileTreeNode
+                  key={child.path}
+                  node={child}
+                  depth={depth + 1}
+                  onFileClick={onFileClick}
+                  onSelect={onSelect}
+                  selectedPath={selectedPath}
+                />
               ))}
             </motion.div>
           )}
@@ -55,9 +73,16 @@ function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
 
   return (
     <div
-      className="flex items-center mb-1 hover:text-[#A3E635] cursor-pointer transition-colors duration-150 select-none"
+      className={cn(
+        "flex items-center mb-1 hover:text-[#A3E635] cursor-pointer transition-colors duration-150 select-none rounded-none px-1 -ml-1",
+        isSelected ? "bg-[#A3E635]/10 text-[#A3E635]" : "text-zinc-400"
+      )}
       style={{ paddingLeft: `${depth * 12 + 16}px` }}
-      onClick={() => onFileClick(node)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(node.path);
+        onFileClick(node);
+      }}
     >
       <NomoFileIcon
         fileName={node.name}
@@ -69,9 +94,14 @@ function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
   );
 }
 
+function cn(...classes: (string | false | null | undefined)[]) {
+  return classes.filter(Boolean).join(' ');
+}
+
 export function LeftSidebar() {
   const [activeTab, setActiveTab] = useState<'explorer' | 'agents'>('explorer');
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const {
     currentWorkspace,
     setCurrentWorkspace,
@@ -83,6 +113,10 @@ export function LeftSidebar() {
     isLoadingWorkspace,
     agents,
     setActiveAgentId,
+    createFile,
+    createDir,
+    deleteFile,
+    renameFile,
   } = useWorkspace();
 
   const handleOpenFolder = async () => {
@@ -94,8 +128,8 @@ export function LeftSidebar() {
         await loadWorkspace(selected);
         setIsWorkspaceMenuOpen(false);
       }
-    } catch (err) {
-      console.error('Failed to open folder:', err);
+    } catch {
+      // Ignore folder open errors
     }
   };
 
@@ -115,17 +149,98 @@ export function LeftSidebar() {
     openTab({ id: `agent-manager-${agentId}`, type: 'agent-manager', title: 'Agent Manager' });
   };
 
+  const getTargetDir = (): string | null => {
+    if (!currentWorkspace) return null;
+    if (!selectedPath) return currentWorkspace;
+    // If selected is a file, use its parent directory
+    const selectedNode = findNode(fileTree, selectedPath);
+    if (selectedNode?.isDirectory) return selectedPath;
+    const parent = selectedPath.substring(0, selectedPath.lastIndexOf('/'));
+    return parent || currentWorkspace;
+  };
+
+  const findNode = (nodes: FileNode[], path: string): FileNode | null => {
+    for (const node of nodes) {
+      if (node.path === path) return node;
+      if (node.children) {
+        const found = findNode(node.children, path);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const handleNewFile = async () => {
+    const dir = getTargetDir();
+    if (!dir) return;
+    const name = window.prompt('Enter file name:');
+    if (!name) return;
+    const path = `${dir}/${name}`;
+    try {
+      await createFile(path, '');
+      if (currentWorkspace) await loadWorkspace(currentWorkspace);
+    } catch {
+      window.alert('Failed to create file');
+    }
+  };
+
+  const handleNewFolder = async () => {
+    const dir = getTargetDir();
+    if (!dir) return;
+    const name = window.prompt('Enter folder name:');
+    if (!name) return;
+    const path = `${dir}/${name}`;
+    try {
+      await createDir(path);
+      if (currentWorkspace) await loadWorkspace(currentWorkspace);
+    } catch {
+      window.alert('Failed to create folder');
+    }
+  };
+
+  const handleRename = async () => {
+    if (!selectedPath) return;
+    const node = findNode(fileTree, selectedPath);
+    if (!node) return;
+    const newName = window.prompt('Enter new name:', node.name);
+    if (!newName || newName === node.name) return;
+    const parent = selectedPath.substring(0, selectedPath.lastIndexOf('/'));
+    const newPath = `${parent}/${newName}`;
+    try {
+      await renameFile(selectedPath, newPath);
+      if (currentWorkspace) await loadWorkspace(currentWorkspace);
+      setSelectedPath(newPath);
+    } catch {
+      window.alert('Failed to rename');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedPath) return;
+    const node = findNode(fileTree, selectedPath);
+    if (!node) return;
+    const confirmed = window.confirm(`Delete "${node.name}"?`);
+    if (!confirmed) return;
+    try {
+      await deleteFile(selectedPath);
+      if (currentWorkspace) await loadWorkspace(currentWorkspace);
+      setSelectedPath(null);
+    } catch {
+      window.alert('Failed to delete');
+    }
+  };
+
   return (
-    <div className="h-full flex flex-col w-full bg-[#0c0c0e]">
+    <div className="h-full flex flex-col w-full bg-[#09090B]">
       {/* Workspace Selector */}
-      <div className="relative shrink-0 border-b border-zinc-800/80 bg-zinc-950/50 p-2">
+      <div className="relative shrink-0 border-b border-zinc-800/80 bg-[#09090B] p-2">
         <button
           onClick={() => setIsWorkspaceMenuOpen(!isWorkspaceMenuOpen)}
-          className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-800/50 group"
+          className="w-full flex items-center justify-between p-2 rounded-none hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-800/50 group"
         >
           <div className="flex items-center overflow-hidden">
             <FolderGit2 className="w-4 h-4 text-[#A3E635] mr-2 shrink-0 group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-medium text-zinc-200 truncate">
+            <span className="text-sm font-mono font-bold text-[#FAFAFA] truncate">
               {currentWorkspace ? currentWorkspace.split(/[/\\]/).pop() : 'No Workspace'}
             </span>
           </div>
@@ -135,7 +250,7 @@ export function LeftSidebar() {
         <AnimatePresence>
           {isWorkspaceMenuOpen && (
             <>
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -147,32 +262,32 @@ export function LeftSidebar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -5, scale: 0.98 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute top-14 left-2 right-2 z-50 bg-[#111113] border border-zinc-800 rounded-sm shadow-2xl overflow-hidden"
+                className="absolute top-14 left-2 right-2 z-50 bg-[#111113] border border-zinc-800 rounded-none shadow-2xl overflow-hidden"
               >
                 <div className="p-1">
                   <button
                     onClick={handleOpenFolder}
-                    className="w-full flex items-center px-3 py-2 text-sm text-zinc-200 hover:bg-[#A3E635]/10 hover:text-[#A3E635] rounded-sm transition-colors group"
+                    className="w-full flex items-center px-3 py-2 text-sm text-[#FAFAFA] hover:bg-[#A3E635]/10 hover:text-[#A3E635] rounded-none transition-colors group"
                   >
                     <FolderOpen className="w-4 h-4 mr-2 text-zinc-400 group-hover:text-[#A3E635] transition-colors" />
                     Open Another Folder...
                   </button>
                 </div>
-                
+
                 {recentWorkspaces.filter(w => w !== currentWorkspace).length > 0 && (
                   <>
                     <div className="h-px bg-zinc-800/50 my-1 flex items-center justify-center">
-                      <span className="bg-[#111113] px-2 text-[10px] uppercase font-bold text-zinc-600 tracking-wider">Recent</span>
+                      <span className="bg-[#111113] px-2 text-[10px] font-mono uppercase font-bold text-zinc-600 tracking-widest">Recent</span>
                     </div>
                     <div className="p-1 max-h-48 overflow-y-auto">
                       {recentWorkspaces.filter(w => w !== currentWorkspace).map((path) => (
                         <button
                           key={path}
-                          onClick={() => handleSelectRecent(path)}
-                          className="w-full flex items-center px-3 py-2 text-left text-sm hover:bg-zinc-800/50 rounded-sm transition-colors group"
+                          onClick={() => handleSelectRecent(path).catch(() => {})}
+                          className="w-full flex items-center px-3 py-2 text-left text-sm hover:bg-zinc-800/50 rounded-none transition-colors group"
                         >
                           <History className="w-3.5 h-3.5 mr-2 text-zinc-500 group-hover:text-zinc-400 shrink-0" />
-                          <span className="truncate text-zinc-400 group-hover:text-zinc-200">
+                          <span className="truncate text-zinc-400 group-hover:text-[#FAFAFA]">
                             {path.split(/[/\\]/).pop()}
                           </span>
                         </button>
@@ -187,13 +302,13 @@ export function LeftSidebar() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-zinc-800/80 bg-[#0c0c0e] shrink-0 pt-2 px-2 gap-2">
+      <div className="flex border-b border-zinc-800/80 bg-[#09090B] shrink-0 pt-2 px-2 gap-2">
         <button
           onClick={() => setActiveTab('explorer')}
           className={`flex items-center pb-2 px-3 text-xs font-medium border-b-2 transition-colors ${
-            activeTab === 'explorer' 
-              ? 'border-[#A3E635] text-zinc-100' 
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
+            activeTab === 'explorer'
+              ? 'border-[#A3E635] text-[#FAFAFA]'
+              : 'border-transparent text-zinc-500 hover:text-[#FAFAFA]'
           }`}
         >
           <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
@@ -202,9 +317,9 @@ export function LeftSidebar() {
         <button
           onClick={() => setActiveTab('agents')}
           className={`flex items-center pb-2 px-3 text-xs font-medium border-b-2 transition-colors ${
-            activeTab === 'agents' 
-              ? 'border-[#A3E635] text-zinc-100' 
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
+            activeTab === 'agents'
+              ? 'border-[#A3E635] text-[#FAFAFA]'
+              : 'border-transparent text-zinc-500 hover:text-[#FAFAFA]'
           }`}
         >
           <Bot className="w-3.5 h-3.5 mr-1.5" />
@@ -215,11 +330,25 @@ export function LeftSidebar() {
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'explorer' && (
           <div className="flex flex-col h-full animate-in fade-in-50 duration-200">
-            <div className="p-4 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest border-b border-zinc-800/50 shrink-0 flex items-center justify-between">
-               <span>Working Directory</span>
-               {isLoadingWorkspace && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+            <div className="p-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest border-b border-zinc-800/50 shrink-0 flex items-center justify-between">
+               <span className="flex items-center gap-1.5"><span className="text-[#A3E635]">#</span>Working Directory</span>
+               <div className="flex items-center gap-1">
+                 {isLoadingWorkspace && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+                 <button onClick={handleNewFile} title="New File" className="p-1 text-zinc-500 hover:text-[#A3E635] hover:bg-zinc-800 rounded-none transition-colors">
+                   <FilePlus className="w-3.5 h-3.5" />
+                 </button>
+                 <button onClick={handleNewFolder} title="New Folder" className="p-1 text-zinc-500 hover:text-[#A3E635] hover:bg-zinc-800 rounded-none transition-colors">
+                   <FolderPlus className="w-3.5 h-3.5" />
+                 </button>
+                 <button onClick={handleRename} title="Rename" className="p-1 text-zinc-500 hover:text-[#A3E635] hover:bg-zinc-800 rounded-none transition-colors disabled:opacity-30" disabled={!selectedPath}>
+                   <Edit3 className="w-3.5 h-3.5" />
+                 </button>
+                 <button onClick={handleDelete} title="Delete" className="p-1 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded-none transition-colors disabled:opacity-30" disabled={!selectedPath}>
+                   <Trash2 className="w-3.5 h-3.5" />
+                 </button>
+               </div>
             </div>
-            
+
             <div className="p-4 text-sm font-mono text-zinc-400">
               {isLoadingWorkspace ? (
                 <div className="flex flex-col items-center justify-center text-center text-zinc-500 text-xs py-8 space-y-2 opacity-50">
@@ -234,7 +363,13 @@ export function LeftSidebar() {
                 <div className="text-xs text-zinc-600 py-4 text-center">No files found</div>
               ) : (
                 fileTree.map((node) => (
-                  <FileTreeNode key={node.path} node={node} onFileClick={handleFileClick} />
+                  <FileTreeNode
+                    key={node.path}
+                    node={node}
+                    onFileClick={handleFileClick}
+                    onSelect={setSelectedPath}
+                    selectedPath={selectedPath}
+                  />
                 ))
               )}
             </div>
@@ -256,8 +391,8 @@ export function LeftSidebar() {
                     onClick={() => handleAgentClick(agent.id)}
                   >
                     <div className="flex items-center min-w-0">
-                      <div className={`w-2 h-2 rounded-full mr-3 shrink-0 ${agent.isCustom ? 'bg-[#A3E635]' : 'bg-zinc-500'}`} />
-                      <div className="truncate text-sm font-medium text-zinc-200">{agent.name}</div>
+                      <div className={`w-2 h-2 rounded-none mr-3 shrink-0 ${agent.isCustom ? 'bg-[#A3E635]' : 'bg-zinc-500'}`} />
+                      <div className="truncate text-sm font-medium text-[#FAFAFA]">{agent.name}</div>
                     </div>
                     {!agent.isCustom && (
                       <span className="text-[10px] bg-[#A3E635]/20 text-[#A3E635] px-1.5 py-0.5 rounded ml-2 shrink-0">Default</span>

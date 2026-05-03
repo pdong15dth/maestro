@@ -5,12 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Maestro</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       width: 100vw;
       height: 100vh;
@@ -19,10 +14,8 @@
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
-
-    /* Grid background */
     .grid {
       position: absolute;
       inset: 0;
@@ -31,257 +24,46 @@
         linear-gradient(to bottom, #27272A 1px, transparent 1px);
       background-size: 40px 40px;
       opacity: 0.4;
-      animation: gridPulse 4s ease-in-out infinite;
     }
-
-    @keyframes gridPulse {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 0.5; }
-    }
-
-    .container {
+    .content {
       position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 24px;
       z-index: 1;
-    }
-
-    /* Logo animation */
-    .logo-wrapper {
-      position: relative;
-      width: 120px;
-      height: 120px;
-    }
-
-    .logo-svg {
-      width: 100%;
-      height: 100%;
-    }
-
-    .logo-svg path, .logo-svg rect, .logo-svg use {
-      stroke-dasharray: 1000;
-      stroke-dashoffset: 1000;
-      animation: drawStroke 1.5s ease-out forwards;
-    }
-
-    .logo-svg .shadow-path {
-      animation-delay: 0s;
-    }
-
-    .logo-svg .main-path {
-      animation-delay: 0.3s;
-    }
-
-    .logo-svg .cursor-path {
-      animation-delay: 0.8s;
-    }
-
-    @keyframes drawStroke {
-      to {
-        stroke-dashoffset: 0;
-      }
-    }
-
-    /* Shadow fill fade in */
-    .shadow-fill {
-      opacity: 0;
-      animation: fadeIn 0.4s ease-out 0.6s forwards;
-    }
-
-    .main-fill {
-      opacity: 0;
-      animation: fadeIn 0.4s ease-out 0.9s forwards;
-    }
-
-    .cursor-fill {
-      opacity: 0;
-      animation: fadeIn 0.3s ease-out 1.2s forwards;
-    }
-
-    @keyframes fadeIn {
-      to { opacity: 1; }
-    }
-
-    /* Text area */
-    .text-area {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
     }
-
+    .logo {
+      width: 96px;
+      height: 96px;
+    }
     .brand {
-      font-size: 28px;
+      font-size: 22px;
       font-weight: 700;
-      color: #FAFAFA;
       letter-spacing: 6px;
-      display: flex;
-      align-items: center;
-      gap: 2px;
+      color: #FAFAFA;
     }
-
-    .brand .char {
-      opacity: 0;
-      transform: translateY(8px);
-      animation: charReveal 0.08s ease-out forwards;
-    }
-
-    @keyframes charReveal {
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
     .cursor {
       display: inline-block;
-      width: 12px;
-      height: 22px;
+      width: 10px;
+      height: 18px;
       background: #A3E635;
-      margin-left: 4px;
-      animation: blink 1s step-end infinite;
+      margin-left: 6px;
       vertical-align: middle;
+      animation: blink 1s step-end infinite;
     }
-
     @keyframes blink {
-      0%, 100% { opacity: 1; }
       50% { opacity: 0; }
-    }
-
-    .status {
-      font-size: 12px;
-      color: #A3E635;
-      letter-spacing: 1.5px;
-      min-height: 18px;
-    }
-
-    .status .dot {
-      animation: dotPulse 1.4s infinite;
-    }
-
-    .status .dot:nth-child(2) { animation-delay: 0.2s; }
-    .status .dot:nth-child(3) { animation-delay: 0.4s; }
-
-    @keyframes dotPulse {
-      0%, 60%, 100% { opacity: 0.3; }
-      30% { opacity: 1; }
-    }
-
-    /* Progress bar */
-    .progress-track {
-      width: 200px;
-      height: 3px;
-      background: #27272A;
-      border-radius: 2px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: #A3E635;
-      width: 0%;
-      animation: progressLoad 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-      animation-delay: 0.5s;
-    }
-
-    @keyframes progressLoad {
-      0% { width: 0%; }
-      40% { width: 55%; }
-      70% { width: 80%; }
-      100% { width: 100%; }
-    }
-
-    /* Fade out class (applied by Tauri before closing) */
-    .fade-out {
-      animation: fadeOut 0.4s ease-in forwards;
-    }
-
-    @keyframes fadeOut {
-      to { opacity: 0; }
     }
   </style>
 </head>
 <body>
   <div class="grid"></div>
-  <div class="container">
-    <div class="logo-wrapper">
-      <svg class="logo-svg" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <path id="maestro-m" d="M 100 280 L 100 120 L 150 120 L 200 190 L 250 120 L 300 120 L 300 280 L 250 280 L 250 190 L 200 250 L 150 190 L 150 280 Z" />
-        </defs>
-        <rect width="400" height="400" rx="80" fill="#09090B" opacity="0"/>
-        
-        <!-- Shadow -->
-        <g class="shadow-fill" opacity="0">
-          <use href="#maestro-m" x="14" y="14" fill="#A3E635" />
-        </g>
-        
-        <!-- Main M -->
-        <g class="main-fill" opacity="0">
-          <use href="#maestro-m" x="0" y="0" fill="#FAFAFA" stroke="#000000" stroke-width="6" stroke-linejoin="miter" />
-        </g>
-        
-        <!-- Cursor -->
-        <g class="cursor-fill" opacity="0">
-          <rect x="250" y="310" width="50" height="18" fill="#A3E635" stroke="#000000" stroke-width="4" />
-        </g>
-      </svg>
-    </div>
-
-    <div class="text-area">
-      <div class="brand" id="brand">
-        <span class="char" style="animation-delay: 1.4s">M</span>
-        <span class="char" style="animation-delay: 1.48s">A</span>
-        <span class="char" style="animation-delay: 1.56s">E</span>
-        <span class="char" style="animation-delay: 1.64s">S</span>
-        <span class="char" style="animation-delay: 1.72s">T</span>
-        <span class="char" style="animation-delay: 1.80s">R</span>
-        <span class="char" style="animation-delay: 1.88s">O</span>
-        <span class="cursor" style="animation-delay: 2.0s"></span>
-      </div>
-      <div class="progress-track">
-        <div class="progress-fill"></div>
-      </div>
-      <div class="status" id="status">
-        <span id="status-text">Initializing</span>
-        <span class="dot">.</span>
-        <span class="dot">.</span>
-        <span class="dot">.</span>
-      </div>
+  <div class="content">
+    <img class="logo" src="logo/logo.svg" alt="Maestro" />
+    <div class="brand">
+      MAESTRO<span class="cursor"></span>
     </div>
   </div>
-
-  <script>
-    const statusMessages = [
-      'Initializing',
-      'Loading modules',
-      'Mounting filesystem',
-      'Spawning agent runtime',
-      'Ready'
-    ];
-    
-    let msgIndex = 0;
-    const statusText = document.getElementById('status-text');
-    
-    const interval = setInterval(() => {
-      msgIndex++;
-      if (msgIndex < statusMessages.length) {
-        statusText.textContent = statusMessages[msgIndex];
-      }
-      if (msgIndex >= statusMessages.length - 1) {
-        clearInterval(interval);
-      }
-    }, 500);
-
-    // Listen for Tauri close signal
-    if (window.__TAURI__) {
-      window.__TAURI__.event.listen('close-splash', () => {
-        document.body.classList.add('fade-out');
-      });
-    }
-  </script>
 </body>
 </html>

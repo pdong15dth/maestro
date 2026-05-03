@@ -26,15 +26,19 @@ export function useAgentStore() {
 
   useEffect(() => {
     let cancelled = false;
-    Store.load(STORE_KEY, { defaults: {}, autoSave: true }).then(async (store) => {
-      const savedAgents = (await store.get<Agent[]>('agents')) ?? [];
-      const savedSkills = (await store.get<Skill[]>('skills')) ?? [];
-      if (!cancelled) {
-        setAgents(savedAgents);
-        setSkills(savedSkills);
-        setReady(true);
-      }
-    });
+    Store.load(STORE_KEY, { defaults: {}, autoSave: true })
+      .then(async (store) => {
+        const savedAgents = (await store.get<Agent[]>('agents')) ?? [];
+        const savedSkills = (await store.get<Skill[]>('skills')) ?? [];
+        if (!cancelled) {
+          setAgents(savedAgents);
+          setSkills(savedSkills);
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setReady(true);
+      });
     return () => { cancelled = true; };
   }, []);
 

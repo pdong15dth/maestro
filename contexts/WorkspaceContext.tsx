@@ -11,6 +11,7 @@ export interface WorkspaceTab {
   type: TabType;
   title: string;
   data?: any;
+  isDirty?: boolean;
 }
 
 interface WorkspaceContextType {
@@ -23,6 +24,7 @@ interface WorkspaceContextType {
   openTab: (tab: WorkspaceTab) => void;
   closeTab: (tabId: string) => void;
   setActiveTabId: (tabId: string) => void;
+  markTabDirty: (tabId: string, dirty: boolean) => void;
   // File system
   fileTree: FileNode[];
   isLoadingWorkspace: boolean;
@@ -30,6 +32,10 @@ interface WorkspaceContextType {
   readFile: (path: string) => Promise<string>;
   readFileBinary: (path: string) => Promise<Uint8Array>;
   writeFile: (path: string, content: string) => Promise<void>;
+  createFile: (path: string, content?: string) => Promise<void>;
+  createDir: (path: string) => Promise<void>;
+  deleteFile: (path: string) => Promise<void>;
+  renameFile: (oldPath: string, newPath: string) => Promise<void>;
   // Agents & Skills
   agents: Agent[];
   skills: Skill[];
@@ -38,6 +44,15 @@ interface WorkspaceContextType {
   saveSkills: (skills: Skill[]) => Promise<void>;
   activeAgentId: string | null;
   setActiveAgentId: (id: string | null) => void;
+  // Agent messages
+  agentMessages: ChatMessage[];
+  setAgentMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  clearAgentMessages: () => void;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'agent' | 'system';
+  content: string;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -61,8 +76,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [tabs, setTabs] = useState<WorkspaceTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
+  const [agentMessages, setAgentMessages] = useState<ChatMessage[]>([]);
 
-  const { fileTree, isLoading: isLoadingWorkspace, loadWorkspace, readFile, readFileBinary, writeFile } = useFileSystem();
+  const {
+    fileTree,
+    isLoading: isLoadingWorkspace,
+    loadWorkspace,
+    readFile,
+    readFileBinary,
+    writeFile,
+    createFile,
+    createDir,
+    deleteFile,
+    renameFile,
+  } = useFileSystem();
   const { agents, skills, ready: agentStoreReady, saveAgents, saveSkills } = useAgentStore();
 
   useEffect(() => {
@@ -97,6 +124,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, [activeTabId]);
 
+  const markTabDirty = useCallback((tabId: string, dirty: boolean) => {
+    setTabs((prev) => {
+      const tab = prev.find((t) => t.id === tabId);
+      if (!tab || tab.isDirty === dirty) return prev;
+      return prev.map((t) => (t.id === tabId ? { ...t, isDirty: dirty } : t));
+    });
+  }, []);
+
+  const clearAgentMessages = useCallback(() => {
+    setAgentMessages([]);
+  }, []);
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -109,12 +148,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         openTab,
         closeTab,
         setActiveTabId,
+        markTabDirty,
         fileTree,
         isLoadingWorkspace,
         loadWorkspace,
         readFile,
         readFileBinary,
         writeFile,
+        createFile,
+        createDir,
+        deleteFile,
+        renameFile,
         agents,
         skills,
         agentStoreReady,
@@ -122,6 +166,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         saveSkills,
         activeAgentId,
         setActiveAgentId,
+        agentMessages,
+        setAgentMessages,
+        clearAgentMessages,
       }}
     >
       {children}

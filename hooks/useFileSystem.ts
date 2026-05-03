@@ -1,4 +1,4 @@
-import { readDir, readFile as readFileBinaryFromFs, readTextFile, writeTextFile, DirEntry } from '@tauri-apps/plugin-fs';
+import { readDir, readFile as readFileBinaryFromFs, readTextFile, writeTextFile, mkdir, remove, rename, DirEntry } from '@tauri-apps/plugin-fs';
 import { useCallback, useState } from 'react';
 
 export interface FileNode {
@@ -12,7 +12,6 @@ export interface FileNode {
 const SKIP_DIRS = new Set([
   'node_modules',
   '.git',
-  '.github',
   '.vscode',
   '.idea',
   '.dart_tool',
@@ -53,7 +52,7 @@ const SKIP_DIRS = new Set([
 const DEFAULT_MAX_DEPTH = 4;
 
 function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/');
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
 }
 
 async function readDirRecursive(
@@ -87,8 +86,41 @@ async function readDirRecursive(
 
     for (const entry of sorted) {
       if (entry.name.startsWith('.') && !entry.name.startsWith('..')) {
-        // Skip hidden files/dirs unless it's a known important one
-        if (!['.env', '.gitignore', '.dockerignore', '.eslintrc', '.prettierrc'].includes(entry.name)) {
+        // Skip hidden files/dirs unless it's a known important one (exact or prefixed variant)
+        const allowedHidden = [
+          '.env',
+          '.gitignore',
+          '.dockerignore',
+          '.eslintrc',
+          '.prettierrc',
+          '.babelrc',
+          '.travis',
+          '.appveyor',
+          '.yarnrc',
+          '.npmrc',
+          '.editorconfig',
+          '.bowerrc',
+          '.eslintignore',
+          '.gitattributes',
+          '.gitmodules',
+          '.esformatter',
+          '.tfignore',
+          '.vscodeignore',
+          '.clang-format',
+          '.npmignore',
+          '.nvmrc',
+          '.node-version',
+          '.python-version',
+          '.ruby-version',
+          '.java-version',
+          '.sdkmanrc',
+          '.tool-versions',
+          '.gitlab-ci',
+        ];
+        const isAllowed = allowedHidden.some(
+          (name) => entry.name === name || entry.name.startsWith(`${name}.`)
+        );
+        if (!isAllowed) {
           continue;
         }
       }
@@ -127,8 +159,7 @@ export function useFileSystem() {
     try {
       const tree = await readDirRecursive(rootPath);
       setFileTree(tree);
-    } catch (err) {
-      console.error('Failed to load workspace:', err);
+    } catch {
       setFileTree([]);
     } finally {
       setIsLoading(false);
@@ -136,16 +167,79 @@ export function useFileSystem() {
   }, []);
 
   const readFile = useCallback(async (path: string): Promise<string> => {
-    return await readTextFile(path);
+    try {
+      return await readTextFile(path);
+    } catch (err: any) {
+      let message: string;
+      if (err && typeof err === 'object') {
+        if (err.message && typeof err.message === 'string') {
+          message = err.message;
+        } else {
+          try {
+            message = JSON.stringify(err);
+          } catch {
+            message = String(err);
+          }
+        }
+      } else {
+        message = String(err);
+      }
+      throw new Error(`Failed to read file: ${message}`);
+    }
   }, []);
 
   const readFileBinary = useCallback(async (path: string): Promise<Uint8Array> => {
-    return await readFileBinaryFromFs(path);
+    try {
+      return await readFileBinaryFromFs(path);
+    } catch (err: any) {
+      let message: string;
+      if (err && typeof err === 'object') {
+        if (err.message && typeof err.message === 'string') {
+          message = err.message;
+        } else {
+          try {
+            message = JSON.stringify(err);
+          } catch {
+            message = String(err);
+          }
+        }
+      } else {
+        message = String(err);
+      }
+      throw new Error(`Failed to read binary file: ${message}`);
+    }
   }, []);
 
   const writeFile = useCallback(async (path: string, content: string): Promise<void> => {
     return await writeTextFile(path, content);
   }, []);
 
-  return { fileTree, isLoading, loadWorkspace, readFile, readFileBinary, writeFile };
+  const createFile = useCallback(async (path: string, content: string = ''): Promise<void> => {
+    return await writeTextFile(path, content);
+  }, []);
+
+  const createDir = useCallback(async (path: string): Promise<void> => {
+    return await mkdir(path, { recursive: true });
+  }, []);
+
+  const deleteFile = useCallback(async (path: string): Promise<void> => {
+    return await remove(path, { recursive: true });
+  }, []);
+
+  const renameFile = useCallback(async (oldPath: string, newPath: string): Promise<void> => {
+    return await rename(oldPath, newPath);
+  }, []);
+
+  return {
+    fileTree,
+    isLoading,
+    loadWorkspace,
+    readFile,
+    readFileBinary,
+    writeFile,
+    createFile,
+    createDir,
+    deleteFile,
+    renameFile,
+  };
 }

@@ -19,8 +19,8 @@ export function WelcomeScreen() {
         addRecentWorkspace(selected);
         await loadWorkspace(selected);
       }
-    } catch (err) {
-      console.error('Failed to open dialog:', err);
+    } catch {
+      // Ignore dialog errors
     }
   };
 
@@ -51,32 +51,11 @@ export function WelcomeScreen() {
           className="w-28 h-28 animate-[scaleIn_0.6s_ease-out_both]"
           style={{ animationDelay: '0.1s' }}
         >
-          <svg viewBox="0 0 400 400" className="w-full h-full drop-shadow-lg">
-            {/* Shadow M */}
-            <path
-              d="M 100 280 L 100 120 L 150 120 L 200 190 L 250 120 L 300 120 L 300 280 L 250 280 L 250 190 L 200 250 L 150 190 L 150 280 Z"
-              fill="#A3E635"
-              transform="translate(14, 14)"
-            />
-            {/* Main M */}
-            <path
-              d="M 100 280 L 100 120 L 150 120 L 200 190 L 250 120 L 300 120 L 300 280 L 250 280 L 250 190 L 200 250 L 150 190 L 150 280 Z"
-              fill="#FAFAFA"
-              stroke="#000000"
-              strokeWidth="6"
-              strokeLinejoin="miter"
-            />
-            {/* Terminal cursor */}
-            <rect
-              x="250"
-              y="310"
-              width="50"
-              height="18"
-              fill="#A3E635"
-              stroke="#000000"
-              strokeWidth="4"
-            />
-          </svg>
+          <img
+            src="/logo/logo.svg"
+            alt="Maestro"
+            className="w-full h-full drop-shadow-lg"
+          />
         </div>
 
         {/* Brand name with typing animation */}
@@ -147,13 +126,13 @@ export function WelcomeScreen() {
               {recentWorkspaces.map((path, idx) => (
                 <button
                   key={path}
-                  onClick={() => handleSelectRecent(path)}
+                  onClick={() => handleSelectRecent(path).catch(() => {})}
                   className="group flex items-center justify-between w-full p-3 text-left bg-[#111113]/80 border border-[#27272A] hover:border-[#A3E635]/60 hover:bg-[#161618] transition-all duration-200 opacity-0 animate-[slideUp_0.4s_ease-out_forwards]"
                   style={{ animationDelay: `${1.6 + idx * 0.08}s` }}
                 >
                   <div className="flex items-center overflow-hidden gap-3 min-w-0">
                     <FolderOpen className="w-4 h-4 text-zinc-600 group-hover:text-[#A3E635] transition-colors shrink-0" />
-                    <span className="text-sm font-mono text-zinc-400 group-hover:text-zinc-200 truncate">
+                    <span className="text-sm font-mono text-zinc-400 group-hover:text-[#FAFAFA] truncate">
                       {path}
                     </span>
                   </div>

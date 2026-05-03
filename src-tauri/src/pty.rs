@@ -1,8 +1,21 @@
 use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
+use serde::Serialize;
+
+#[derive(Clone, Serialize)]
+pub struct OutputPayload {
+    pub session_id: String,
+    pub chunk: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct SessionExitedPayload {
+    pub session_id: String,
+}
 
 pub struct PtySession {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -10,25 +23,26 @@ pub struct PtySession {
 }
 
 pub struct PtyManager {
-    session: Arc<Mutex<Option<PtySession>>>,
+    sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
-            session: Arc::new(Mutex::new(None)),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub fn spawn(
         &self,
         app: AppHandle,
+        session_id: String,
         command: String,
         args: Vec<String>,
         cwd: String,
     ) -> Result<(), String> {
-        // Kill any existing session first
-        let _ = self.kill();
+        // Kill existing session with same ID if any
+        let _ = self.kill(&session_id);
 
         let pty_system = NativePtySystem::default();
         let pair = pty_system
@@ -59,9 +73,9 @@ impl PtyManager {
             .map_err(|e| e.to_string())?;
 
         let (tx, mut rx) = mpsc::channel::<String>(256);
+        let sid = session_id.clone();
 
         // Spawn a dedicated thread to read from the PTY master.
-        // This avoids blocking the async runtime.
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -80,19 +94,29 @@ impl PtyManager {
 
         // Forward chunks to the frontend via Tauri events
         let app_clone = app.clone();
+        let sid_clone = sid.clone();
         tokio::spawn(async move {
             while let Some(chunk) = rx.recv().await {
-                let _ = app_clone.emit("agent-output", chunk);
+                let _ = app_clone.emit("agent-output", OutputPayload {
+                    session_id: sid_clone.clone(),
+                    chunk,
+                });
             }
-            // Emit an EOF marker so the UI knows the stream ended
-            let _ = app_clone.emit("agent-output", "\n[Process exited]\n");
+            // Emit exit event and EOF marker
+            let _ = app_clone.emit("session-exited", SessionExitedPayload {
+                session_id: sid_clone.clone(),
+            });
+            let _ = app_clone.emit("agent-output", OutputPayload {
+                session_id: sid_clone,
+                chunk: "\n[Process exited]\n".to_string(),
+            });
         });
 
-        let mut session = self
-            .session
+        let mut sessions = self
+            .sessions
             .lock()
             .map_err(|e| e.to_string())?;
-        *session = Some(PtySession {
+        sessions.insert(session_id, PtySession {
             writer: Arc::new(Mutex::new(writer)),
             child,
         });
@@ -100,12 +124,12 @@ impl PtyManager {
         Ok(())
     }
 
-    pub fn send_stdin(&self, input: String) -> Result<(), String> {
-        let session = self
-            .session
+    pub fn send_stdin(&self, session_id: String, input: String) -> Result<(), String> {
+        let sessions = self
+            .sessions
             .lock()
             .map_err(|e| e.to_string())?;
-        if let Some(session) = session.as_ref() {
+        if let Some(session) = sessions.get(&session_id) {
             let mut writer = session
                 .writer
                 .lock()
@@ -123,14 +147,33 @@ impl PtyManager {
         }
     }
 
-    pub fn kill(&self) -> Result<(), String> {
-        let mut session = self
-            .session
+    pub fn kill(&self, session_id: &str) -> Result<(), String> {
+        let mut sessions = self
+            .sessions
             .lock()
             .map_err(|e| e.to_string())?;
-        if let Some(mut session) = session.take() {
+        if let Some(mut session) = sessions.remove(session_id) {
             let _ = session.child.kill();
         }
         Ok(())
+    }
+
+    pub fn kill_all(&self) -> Result<(), String> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|e| e.to_string())?;
+        for (_, mut session) in sessions.drain() {
+            let _ = session.child.kill();
+        }
+        Ok(())
+    }
+
+    pub fn list_sessions(&self) -> Result<Vec<String>, String> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|e| e.to_string())?;
+        Ok(sessions.keys().cloned().collect())
     }
 }

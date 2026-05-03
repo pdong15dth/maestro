@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { CodeEditor } from './CodeEditor';
-import { isImageFile, isSvgFile, getMimeType } from '@/lib/utils';
+import { isImageFile, isSvgFile, isBinaryFile, getMimeType } from '@/lib/utils';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface FileViewerProps {
   filePath: string;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -55,7 +55,7 @@ function ImagePreview({ filePath, readFileBinary }: { filePath: string; readFile
   }
 
   return (
-    <div className="w-full h-full bg-[#0a0a0b] flex items-center justify-center overflow-auto p-8">
+    <div className="w-full h-full bg-[#09090B] flex items-center justify-center overflow-auto p-8">
       <img
         src={src}
         alt={filePath}
@@ -66,7 +66,7 @@ function ImagePreview({ filePath, readFileBinary }: { filePath: string; readFile
   );
 }
 
-export function FileViewer({ filePath }: FileViewerProps) {
+export function FileViewer({ filePath, onDirtyChange }: FileViewerProps) {
   const { readFileBinary } = useWorkspace();
 
   if (isImageFile(filePath)) {
@@ -75,17 +75,25 @@ export function FileViewer({ filePath }: FileViewerProps) {
 
   if (isSvgFile(filePath)) {
     return (
-      <PanelGroup direction="horizontal" className="w-full h-full">
-        <Panel defaultSize={50} minSize={20}>
+      <div className="w-full h-full flex">
+        <div className="flex-1 min-w-0 h-full">
           <CodeEditor filePath={filePath} />
-        </Panel>
-        <PanelResizeHandle className="w-3 group flex items-center justify-center cursor-col-resize outline-none hover:bg-zinc-800/50 transition-colors z-10">
-          <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-[#A3E635]/50 transition-colors" />
-        </PanelResizeHandle>
-        <Panel defaultSize={50} minSize={20}>
+        </div>
+        <div className="w-3 flex items-center justify-center cursor-col-resize bg-zinc-900 hover:bg-zinc-800 transition-colors">
+          <div className="w-[1px] h-full bg-zinc-800" />
+        </div>
+        <div className="flex-1 min-w-0 h-full">
           <ImagePreview filePath={filePath} readFileBinary={readFileBinary} />
-        </Panel>
-      </PanelGroup>
+        </div>
+      </div>
+    );
+  }
+
+  if (isBinaryFile(filePath)) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-zinc-500 text-sm bg-[#09090B]">
+        Binary file — preview not available
+      </div>
     );
   }
 

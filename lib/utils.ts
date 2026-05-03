@@ -1301,6 +1301,27 @@ export function isSvgFile(filePath: string): boolean {
   return ext === 'svg';
 }
 
+const BINARY_EXTENSIONS = new Set([
+  // Archives
+  'zip', 'tar', 'tgz', 'gz', 'bz2', 'xz', '7z', 'rar', 'deb', 'rpm', 'pkg', 'dmg',
+  // Executables / Libraries
+  'exe', 'dll', 'so', 'dylib', 'bin', 'o', 'a', 'lib', 'out', 'wasm',
+  // Audio
+  'mp3', 'wav', 'ogg', 'oga', 'flac', 'aac', 'wma', 'm4a', 'opus',
+  // Video
+  'mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm', 'm4v', 'mpg', 'mpeg',
+  // Fonts
+  'ttf', 'otf', 'woff', 'woff2', 'eot',
+  // Documents
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
+  // Images already handled by isImageFile
+]);
+
+export function isBinaryFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  return BINARY_EXTENSIONS.has(ext);
+}
+
 // ───────────────────────────────────────────────
 // MIME Type Map
 // ───────────────────────────────────────────────
@@ -1395,6 +1416,8 @@ const MIME_TYPE_MAP: Record<string, string> = {
   rtf: 'application/rtf',
   txt: 'text/plain',
   text: 'text/plain',
+  md: 'text/markdown',
+  markdown: 'text/markdown',
   ics: 'text/calendar',
   vcf: 'text/vcard',
   // Audio

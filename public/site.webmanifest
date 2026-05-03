@@ -1,0 +1,21 @@
+{
+  "name": "Maestro",
+  "short_name": "Maestro",
+  "description": "Maestro - AI Agent CLI Wrapper and Code Review Dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090B",
+  "theme_color": "#09090B",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

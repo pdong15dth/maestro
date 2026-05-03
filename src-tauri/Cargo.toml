@@ -2,9 +2,9 @@
 name = "ai-studio-applet"
 version = "0.1.0"
 description = "Maestro - AI Agent CLI Wrapper and Code Review Dashboard"
-authors = ["you"]
-license = ""
-repository = ""
+authors = ["Maestro Team"]
+license = "MIT"
+repository = "https://github.com/maestro-ai/maestro"
 edition = "2021"
 rust-version = "1.70"
 
