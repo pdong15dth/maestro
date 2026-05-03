@@ -1,0 +1,6 @@
+{
+  "name": "AI Agent CLI Wrapper",
+  "description": "A developer dashboard for an AI agent, featuring terminal output, thought process visibility, and side-by-side code diffs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
