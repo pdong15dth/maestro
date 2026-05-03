@@ -1,7 +1,7 @@
 [package]
 name = "ai-studio-applet"
 version = "0.1.0"
-description = "AI Agent CLI Wrapper and Code Review Dashboard"
+description = "Maestro - AI Agent CLI Wrapper and Code Review Dashboard"
 authors = ["you"]
 license = ""
 repository = ""

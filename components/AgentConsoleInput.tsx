@@ -1,14 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { languages } from '@codemirror/language-data';
-import { vscodeDark } from '@uiw/codemirror-theme-vscode';
-import { EditorView, keymap } from '@codemirror/view';
-import { Cpu, SquareTerminal, Sparkles, MessageCircle, StopCircle, ArrowUp, Check } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Cpu, ArrowUp, Check, Plus, ChevronDown, SlidersHorizontal,
+  StopCircle, Bold, Italic, Code, Link, List, Heading, Quote, Strikethrough
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { motion } from 'motion/react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface AgentConsoleInputProps {
@@ -21,190 +18,272 @@ interface AgentConsoleInputProps {
 
 type AgentMode = 'Plan' | 'Edit' | 'Chat';
 
+const MIN_INPUT_HEIGHT = 120; // ~5-6 lines
+const MAX_INPUT_HEIGHT = 480; // ~20 lines
+
 export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning }: AgentConsoleInputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [mode, setMode] = useState<AgentMode>('Edit');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const editorRef = useRef<ReactCodeMirrorRef>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const [isModeOpen, setIsModeOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const agentDropdownRef = useRef<HTMLDivElement>(null);
+  const modeDropdownRef = useRef<HTMLDivElement>(null);
   const { agents, activeAgentId, setActiveAgentId } = useWorkspace();
 
   const activeAgent = agents.find(a => a.id === activeAgentId);
 
+  // Auto-grow textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = '0px';
+    const scrollH = el.scrollHeight;
+    const newH = Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, scrollH));
+    el.style.height = `${newH}px`;
+  }, [value]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
+      if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target as Node)) {
+        setIsAgentOpen(false);
+      }
+      if (modeDropdownRef.current && !modeDropdownRef.current.contains(event.target as Node)) {
+        setIsModeOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSubmit = (cmd: string) => {
-    if (!cmd.trim()) return;
+  const handleSubmit = useCallback(() => {
+    if (!value.trim()) return;
     onSubmit();
-  };
+  }, [value, onSubmit]);
 
-  // Custom keymap extension for Enter / Shift+Enter
-  const enterExtension = keymap.of([
-    {
-      key: 'Enter',
-      run: (view) => {
-        const cmd = view.state.doc.toString();
-        handleSubmit(cmd);
-        return true; // prevent default new line
-      },
-      shift: () => false, // allow default Shift+Enter
-    },
-  ]);
+  const insertMarkdown = useCallback((before: string, after: string = '', placeholder: string = '') => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const selected = value.slice(start, end);
+    const text = selected || placeholder;
+    const newValue = value.slice(0, start) + before + text + after + value.slice(end);
+    onChange(newValue);
+    setTimeout(() => {
+      const pos = selected ? start + before.length : start + before.length + text.length;
+      el.selectionStart = el.selectionEnd = pos;
+      el.focus();
+    }, 0);
+  }, [value, onChange]);
+
+  const toolbarItems = [
+    { icon: Bold, label: 'Bold', action: () => insertMarkdown('**', '**') },
+    { icon: Italic, label: 'Italic', action: () => insertMarkdown('*', '*') },
+    { icon: Strikethrough, label: 'Strike', action: () => insertMarkdown('~~', '~~') },
+    { icon: Heading, label: 'Heading', action: () => insertMarkdown('## ', '', 'Heading') },
+    { icon: Quote, label: 'Quote', action: () => insertMarkdown('> ', '', 'Quote') },
+    { icon: List, label: 'List', action: () => insertMarkdown('- ', '', 'Item') },
+    { icon: Code, label: 'Code', action: () => insertMarkdown('`', '`', 'code') },
+    { icon: Link, label: 'Link', action: () => insertMarkdown('[', '](url)', 'text') },
+  ];
 
   return (
-    <div 
-      className={cn(
-        "flex flex-col w-full bg-[#111113] border rounded-lg shadow-inner transition-all duration-200",
-        isFocused 
-          ? "border-indigo-500/50 ring-1 ring-indigo-500/20" 
-          : "border-zinc-800/80"
-      )}
-    >
-      {/* Markdown Input Area */}
-      <div className="relative w-full max-h-[40vh] overflow-y-auto custom-scrollbar">
-        <CodeMirror
-          ref={editorRef}
-          value={value}
-          onChange={onChange}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          theme={vscodeDark}
-          extensions={[
-             markdown({ base: markdownLanguage, codeLanguages: languages }),
-             EditorView.lineWrapping,
-             enterExtension
-          ]}
-          basicSetup={{
-            lineNumbers: false,
-            foldGutter: false,
-            highlightActiveLine: false,
-            highlightSelectionMatches: false,
-            dropCursor: false,
-            bracketMatching: true,
-          }}
-          className="text-sm border-none outline-none [&_.cm-editor]:bg-transparent [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:bg-transparent [&_.cm-scroller]:font-sans [&_.cm-content]:py-3 [&_.cm-content]:px-3"
-          placeholder="Instruct the agent..."
-        />
+    <div className="flex flex-col w-full gap-2">
+      {/* Tip */}
+      <div className="flex items-center gap-1 text-xs text-zinc-500 px-1">
+        <span className="text-zinc-400 font-medium">Tip:</span>
+        <span>Use <span className="text-zinc-300 font-mono">/create-agent</span> to scaffold a custom agent for your workflow.</span>
       </div>
 
-      {/* Action Bar */}
-      <div className="flex items-center justify-between px-3 h-12 bg-black/50 border-t border-zinc-800/80 shrink-0 rounded-b-[7px]">
-        
-        {/* Left Side: Controls */}
-        <div className="flex items-center gap-3">
-          {/* Model Selector Dropdown Trigger */}
-          <div className="relative flex items-center" ref={dropdownRef}>
-            <button 
+      {/* Input Container */}
+      <div
+        className={cn(
+          "flex flex-col w-full bg-[#0f0f10] border rounded-xl transition-all duration-200",
+          isFocused
+            ? "border-zinc-700/60 ring-1 ring-zinc-700/30"
+            : "border-zinc-800/60"
+        )}
+      >
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit();
+            }
+          }}
+          className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 resize-none border-none outline-none py-3 px-3 overflow-y-auto custom-scrollbar"
+          style={{ minHeight: MIN_INPUT_HEIGHT, maxHeight: MAX_INPUT_HEIGHT }}
+          placeholder="Describe what to build"
+          rows={1}
+        />
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-0.5 px-2 pb-1">
+          {toolbarItems.map((item) => (
+            <button
+              key={item.label}
               type="button"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className={cn(
-                "flex items-center gap-1.5 px-2 py-1.5 rounded transition-colors text-xs font-medium",
-                isDropdownOpen ? "bg-zinc-800 text-zinc-300" : "hover:bg-zinc-800 text-zinc-400"
-              )}
+              onClick={item.action}
+              title={item.label}
+              className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors"
             >
-              <Cpu className="w-3.5 h-3.5" />
-              <span>{activeAgent?.name ?? 'Select Agent'}</span>
+              <item.icon className="w-3.5 h-3.5" />
             </button>
-            
-            {/* Drop-up Menu */}
-            {isDropdownOpen && (
-              <div className="absolute bottom-full left-0 mb-2 w-56 bg-[#18181b] border border-zinc-800/80 rounded-md shadow-xl shadow-black/50 overflow-hidden z-50">
-                <div className="py-1">
-                  {agents.length === 0 && (
-                    <div className="px-4 py-2 text-sm text-zinc-500">No agents configured</div>
-                  )}
-                  {agents.map((agent) => (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveAgentId(agent.id);
-                        setIsDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between px-4 py-2 text-sm text-zinc-300 hover:bg-indigo-600 hover:text-white transition-colors text-left"
-                    >
-                      <span className="truncate">{agent.name}</span>
-                      {activeAgentId === agent.id && <Check className="w-4 h-4 shrink-0" />}
-                    </button>
-                  ))}
+          ))}
+        </div>
+
+        {/* Action Bar */}
+        <div className="flex items-center justify-between px-2.5 h-11 bg-transparent shrink-0">
+          {/* Left Controls */}
+          <div className="flex items-center gap-1.5">
+            {/* Attach Button */}
+            <button
+              type="button"
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+              title="Attach"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+
+            {/* Agent Dropdown */}
+            <div className="relative" ref={agentDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsAgentOpen(!isAgentOpen)}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors",
+                  isAgentOpen ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
+                )}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span>{activeAgent?.name ?? 'Agent'}</span>
+                <ChevronDown className={cn("w-3 h-3 transition-transform", isAgentOpen && "rotate-180")} />
+              </button>
+
+              {isAgentOpen && (
+                <div className="absolute bottom-full left-0 mb-1.5 w-52 bg-[#18181b] border border-zinc-800 rounded-lg shadow-xl shadow-black/50 overflow-hidden z-50">
+                  <div className="py-1">
+                    {agents.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-zinc-500">No agents configured</div>
+                    )}
+                    {agents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveAgentId(agent.id);
+                          setIsAgentOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors text-left"
+                      >
+                        <span className="truncate">{agent.name}</span>
+                        {activeAgentId === agent.id && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
+
+            {/* Mode Dropdown */}
+            <div className="relative" ref={modeDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsModeOpen(!isModeOpen)}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors",
+                  isModeOpen ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
+                )}
+              >
+                <span>{mode}</span>
+                <ChevronDown className={cn("w-3 h-3 transition-transform", isModeOpen && "rotate-180")} />
+              </button>
+
+              {isModeOpen && (
+                <div className="absolute bottom-full left-0 mb-1.5 w-32 bg-[#18181b] border border-zinc-800 rounded-lg shadow-xl shadow-black/50 overflow-hidden z-50">
+                  <div className="py-1">
+                    {(['Plan', 'Edit', 'Chat'] as AgentMode[]).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          setMode(m);
+                          setIsModeOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors text-left"
+                      >
+                        <span>{m}</span>
+                        {mode === m && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tools / Settings */}
+            <button
+              type="button"
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+              title="Settings"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Stop (only when running) */}
+            {isRunning && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onStop();
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <StopCircle className="w-3.5 h-3.5" />
+                Stop
+              </button>
             )}
           </div>
 
-          {/* Divider */}
-          <div className="w-[1px] h-4 bg-zinc-800" />
-
-          {/* Mode Selector */}
-          <div className="flex items-center p-0.5 bg-zinc-900 border border-zinc-800 rounded-md">
-            {(['Plan', 'Edit', 'Chat'] as AgentMode[]).map((m) => {
-              const isActive = mode === m;
-              return (
-                <button
-                  key={m}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setMode(m);
-                  }}
-                  className={cn(
-                    "relative px-2.5 py-1 text-[11px] font-semibold rounded-sm transition-all duration-200 flex items-center gap-1.5",
-                    isActive ? "text-indigo-300" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="mode-bg"
-                      className="absolute inset-0 bg-indigo-500/10 border border-indigo-500/20 rounded-sm"
-                      initial={false}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                  {m === 'Plan' && <Sparkles className="w-3 h-3 relative z-10" />}
-                  {m === 'Edit' && <SquareTerminal className="w-3 h-3 relative z-10" />}
-                  {m === 'Chat' && <MessageCircle className="w-3 h-3 relative z-10" />}
-                  <span className="relative z-10">{m}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right Side: Action Buttons */}
-        <div className="flex items-center gap-2">
-          <button 
-            type="button" 
-            className="flex items-center justify-center h-7 px-3 rounded-md bg-transparent hover:bg-red-500/10 text-zinc-500 hover:text-red-400 text-xs font-semibold transition-colors gap-1.5"
+          {/* Right: Submit */}
+          <button
+            type="button"
             onClick={(e) => {
               e.preventDefault();
-              onStop();
-            }}
-          >
-            <StopCircle className="w-3.5 h-3.5" />
-            Stop
-          </button>
-          
-          <button 
-            type="button" 
-            onClick={(e) => {
-              e.preventDefault();
-              handleSubmit(value);
+              handleSubmit();
             }}
             disabled={!value.trim()}
-            className="flex items-center justify-center h-7 px-3 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold transition-colors gap-1.5 shadow-lg shadow-indigo-500/20"
+            className={cn(
+              "flex items-center justify-center w-8 h-8 rounded-full border transition-all duration-200",
+              value.trim()
+                ? "border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:border-zinc-500"
+                : "border-zinc-800 text-zinc-600 cursor-not-allowed"
+            )}
           >
-            <ArrowUp className="w-3.5 h-3.5" />
-            Send
+            <ArrowUp className="w-4 h-4" />
           </button>
         </div>
-        
+      </div>
+
+      {/* Bottom Context Bar */}
+      <div className="flex items-center gap-3 px-1">
+        <button className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
+          Local
+          <ChevronDown className="w-3 h-3" />
+        </button>
+        <button className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+          Default Approvals
+          <ChevronDown className="w-3 h-3" />
+        </button>
       </div>
     </div>
   );

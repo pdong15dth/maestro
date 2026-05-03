@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tauri::{Manager, Emitter};
 
 mod pty;
 
@@ -48,6 +49,25 @@ fn main() {
             kill_agent,
             check_cli
         ])
+        .setup(|app| {
+            let splashscreen = app.get_webview_window("splashscreen").unwrap();
+            let main = app.get_webview_window("main").unwrap();
+
+            tauri::async_runtime::spawn(async move {
+                // Wait for splash screen animation to complete
+                std::thread::sleep(std::time::Duration::from_millis(2800));
+
+                // Emit fade-out event to splashscreen
+                let _ = splashscreen.emit("close-splash", ());
+                std::thread::sleep(std::time::Duration::from_millis(400));
+
+                // Show main window and close splashscreen
+                let _ = main.show();
+                let _ = splashscreen.close();
+            });
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

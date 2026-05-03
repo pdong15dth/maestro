@@ -14,8 +14,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'AI Agent CLI',
-  description: 'AI Agent CLI Wrapper and Code Review Dashboard',
+  title: 'Maestro',
+  description: 'Maestro - AI Agent CLI Wrapper and Code Review Dashboard',
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {

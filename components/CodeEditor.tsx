@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { getLanguageFromPath } from '@/lib/utils';
 
 interface CodeEditorProps {
   filePath: string;
@@ -49,17 +50,8 @@ export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
     }
   };
 
-  // Determine language from extension
-  const extension = filePath.split('.').pop() || '';
-  const language =
-    extension === 'rs' ? 'rust' :
-    extension === 'ts' || extension === 'tsx' ? 'typescript' :
-    extension === 'js' ? 'javascript' :
-    extension === 'json' ? 'json' :
-    extension === 'md' ? 'markdown' :
-    extension === 'py' ? 'python' :
-    extension === 'toml' ? 'ini' :
-    'plaintext';
+  // Determine language from file path
+  const language = getLanguageFromPath(filePath);
 
   if (!isLoaded) {
     return (

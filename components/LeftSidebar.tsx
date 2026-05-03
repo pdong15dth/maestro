@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FolderGit2, Bot, ChevronDown, FolderOpen, History, Loader2, FileCode, File, Settings, ChevronRight } from 'lucide-react';
+import {
+  FolderGit2, Bot, ChevronDown, FolderOpen, History, Loader2, Settings, ChevronRight
+} from 'lucide-react';
+import { NomoFileIcon } from './NomoFileIcon';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { FileNode } from '@/hooks/useFileSystem';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -12,7 +15,7 @@ interface FileTreeNodeProps {
 }
 
 function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   if (node.isDirectory) {
     return (
@@ -23,7 +26,13 @@ function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
           onClick={() => setExpanded(!expanded)}
         >
           <ChevronRight className={`w-3 h-3 mr-1 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-          <FolderOpen className="w-3.5 h-3.5 mr-2 text-zinc-500" />
+          <NomoFileIcon
+            fileName={node.name}
+            isFolder={true}
+            isOpen={expanded}
+            size={16}
+            className="mr-2"
+          />
           <span className="text-sm font-mono">{node.name}</span>
         </div>
         <AnimatePresence>
@@ -50,13 +59,11 @@ function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
       style={{ paddingLeft: `${depth * 12 + 16}px` }}
       onClick={() => onFileClick(node)}
     >
-      {node.name.endsWith('.rs') || node.name.endsWith('.ts') || node.name.endsWith('.tsx') || node.name.endsWith('.js') ? (
-        <FileCode className="w-3.5 h-3.5 mr-2 text-zinc-500" />
-      ) : node.name.endsWith('.toml') || node.name.endsWith('.json') ? (
-        <Settings className="w-3.5 h-3.5 mr-2 text-zinc-500" />
-      ) : (
-        <File className="w-3.5 h-3.5 mr-2 text-zinc-500" />
-      )}
+      <NomoFileIcon
+        fileName={node.name}
+        size={16}
+        className="mr-2"
+      />
       <span className="text-sm font-mono">{node.name}</span>
     </div>
   );

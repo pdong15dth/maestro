@@ -1,17 +1,32 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for the AI CLI Wrapper IDE",
+  "description": "Default capabilities for the Maestro IDE",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:event:default",
     "dialog:allow-open",
-    "fs:allow-read-dir",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [{"path": "$APPDATA"}, {"path": "$APPDATA/**"}, {"path": "$HOME"}, {"path": "$HOME/**"}, {"path": "**"}]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [{"path": "$APPDATA"}, {"path": "$APPDATA/**"}, {"path": "$HOME"}, {"path": "$HOME/**"}, {"path": "**"}]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [{"path": "$APPDATA"}, {"path": "$APPDATA/**"}, {"path": "$HOME"}, {"path": "$HOME/**"}, {"path": "**"}]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{"path": "$APPDATA"}, {"path": "$APPDATA/**"}, {"path": "$HOME"}, {"path": "$HOME/**"}, {"path": "**"}]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{"path": "$APPDATA"}, {"path": "$APPDATA/**"}, {"path": "$HOME"}, {"path": "$HOME/**"}, {"path": "**"}]
+    },
     "store:default"
   ]
 }

@@ -73,7 +73,7 @@ export function WorkspaceFooter({ isOpen, setIsOpen, activeTab, setActiveTab }: 
             <div className="flex-1 bg-[#0c0c0d] font-mono text-[13px] text-zinc-300 p-2 overflow-y-auto w-full leading-relaxed custom-scrollbar">
               {activeTab === 'terminal' && activeTerminalId === '1' && (
                 <div>
-                  <div className="text-zinc-500">Welcome to AI Studio Local Terminal</div>
+                  <div className="text-zinc-500">Welcome to Maestro Terminal</div>
                   <div className="flex"><span className="text-emerald-400 mr-2">$</span> cargo check --workspace</div>
                   <div className="text-zinc-400">&gt; Checking auth v0.1.0</div>
                   <div className="text-zinc-400">&gt; Checking queue_manager v0.2.1</div>

@@ -28,6 +28,7 @@ interface WorkspaceContextType {
   isLoadingWorkspace: boolean;
   loadWorkspace: (path: string) => Promise<void>;
   readFile: (path: string) => Promise<string>;
+  readFileBinary: (path: string) => Promise<Uint8Array>;
   writeFile: (path: string, content: string) => Promise<void>;
   // Agents & Skills
   agents: Agent[];
@@ -61,7 +62,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
 
-  const { fileTree, isLoading: isLoadingWorkspace, loadWorkspace, readFile, writeFile } = useFileSystem();
+  const { fileTree, isLoading: isLoadingWorkspace, loadWorkspace, readFile, readFileBinary, writeFile } = useFileSystem();
   const { agents, skills, ready: agentStoreReady, saveAgents, saveSkills } = useAgentStore();
 
   useEffect(() => {
@@ -112,6 +113,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         isLoadingWorkspace,
         loadWorkspace,
         readFile,
+        readFileBinary,
         writeFile,
         agents,
         skills,

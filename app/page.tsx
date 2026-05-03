@@ -9,7 +9,7 @@ import { SettingsModal } from '@/components/SettingsModal';
 import { WorkspaceFooter } from '@/components/WorkspaceFooter';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { AgentManager } from '@/components/AgentManager';
-import { CodeEditor } from '@/components/CodeEditor';
+import { FileViewer } from '@/components/FileViewer';
 import { AgentConsoleInput } from '@/components/AgentConsoleInput';
 import { useAgentProcess } from '@/hooks/useAgentProcess';
 import { cn } from '@/lib/utils';
@@ -243,7 +243,7 @@ export default function Page() {
                    style={{ display: activeTabId === tab.id ? 'flex' : 'none', flexDirection: 'column' }}
                  >
                    {tab.type === 'agent-manager' && <AgentManager />}
-                   {tab.type === 'file' && <CodeEditor filePath={tab.data || tab.title} />}
+                   {tab.type === 'file' && <FileViewer filePath={tab.data || tab.title} />}
                    {tab.type === 'terminal' && (
                      <div className="flex flex-col h-full bg-[#0a0a0b] text-zinc-300 font-mono text-sm p-4">
                        <div className="flex-1 overflow-y-auto space-y-1 pb-4">
@@ -273,7 +273,7 @@ export default function Page() {
              <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-indigo-500/50 transition-colors" />
            </PanelResizeHandle>
            
-           <Panel defaultSize={25} minSize={20} maxSize={50} className="flex flex-col min-w-0 bg-[#0c0c0e] overflow-hidden relative border-l border-zinc-800">
+           <Panel defaultSize={25} minSize={20} maxSize={50} className="flex flex-col min-w-0 bg-[#0c0c0e] relative border-l border-zinc-800">
              <div className="h-12 border-b border-zinc-800/80 shrink-0 flex items-center justify-between px-4 bg-[#0c0c0e] z-30 relative">
                <div className="flex items-center">
                  <Terminal className="w-4 h-4 text-emerald-400 mr-2" />
@@ -344,7 +344,7 @@ export default function Page() {
                 <div ref={messagesEndRef} />
              </div>
              
-             <div className="p-4 border-t border-zinc-800/80 bg-[#0c0c0e] shrink-0">
+             <div className="p-4 border-t border-zinc-800/80 bg-[#0c0c0e] shrink-0 min-h-0">
                <AgentConsoleInput 
                  value={agentInput}
                  onChange={setAgentInput}
