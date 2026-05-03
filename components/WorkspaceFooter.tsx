@@ -74,16 +74,16 @@ export function WorkspaceFooter({ isOpen, setIsOpen, activeTab, setActiveTab }: 
               {activeTab === 'terminal' && activeTerminalId === '1' && (
                 <div>
                   <div className="text-zinc-500">Welcome to Maestro Terminal</div>
-                  <div className="flex"><span className="text-emerald-400 mr-2">$</span> cargo check --workspace</div>
+                  <div className="flex"><span className="text-[#A3E635] mr-2">$</span> cargo check --workspace</div>
                   <div className="text-zinc-400">&gt; Checking auth v0.1.0</div>
                   <div className="text-zinc-400">&gt; Checking queue_manager v0.2.1</div>
-                  <div className="text-emerald-400 font-bold">&gt; Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s</div>
-                  <div className="flex"><span className="text-emerald-400 mr-2">$</span> <span className="animate-pulse">_</span></div>
+                  <div className="text-[#A3E635] font-bold">&gt; Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s</div>
+                  <div className="flex"><span className="text-[#A3E635] mr-2">$</span> <span className="animate-pulse">_</span></div>
                 </div>
               )}
               {activeTab === 'terminal' && activeTerminalId !== '1' && (
                 <div>
-                  <div className="flex"><span className="text-emerald-400 mr-2">$</span> <span className="animate-pulse">_</span></div>
+                  <div className="flex"><span className="text-[#A3E635] mr-2">$</span> <span className="animate-pulse">_</span></div>
                 </div>
               )}
               {activeTab === 'logs' && (
@@ -96,7 +96,7 @@ export function WorkspaceFooter({ isOpen, setIsOpen, activeTab, setActiveTab }: 
               {activeTab === 'problems' && (
                 <div className="text-zinc-400">
                   <div className="flex font-sans items-center gap-2 mb-2 p-2 bg-zinc-900 border border-zinc-800 rounded">
-                     <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                     <CheckCircle2 className="w-4 h-4 text-[#A3E635]" />
                      <span className="text-sm">No problems have been detected in the workspace.</span>
                   </div>
                 </div>

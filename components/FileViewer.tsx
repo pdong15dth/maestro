@@ -59,7 +59,7 @@ function ImagePreview({ filePath, readFileBinary }: { filePath: string; readFile
       <img
         src={src}
         alt={filePath}
-        className="max-w-full max-h-full object-contain shadow-2xl rounded-lg border border-zinc-800"
+        className="max-w-full max-h-full object-contain shadow-2xl rounded-sm border border-zinc-800"
         draggable={false}
       />
     </div>
@@ -80,7 +80,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
           <CodeEditor filePath={filePath} />
         </Panel>
         <PanelResizeHandle className="w-3 group flex items-center justify-center cursor-col-resize outline-none hover:bg-zinc-800/50 transition-colors z-10">
-          <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-indigo-500/50 transition-colors" />
+          <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-[#A3E635]/50 transition-colors" />
         </PanelResizeHandle>
         <Panel defaultSize={50} minSize={20}>
           <ImagePreview filePath={filePath} readFileBinary={readFileBinary} />

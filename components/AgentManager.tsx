@@ -107,7 +107,7 @@ export function AgentManager() {
             onClick={() => setActiveTab('agents')}
             className={`flex items-center pb-2 px-3 text-xs font-medium border-b-2 transition-colors ${
               activeTab === 'agents' 
-                ? 'border-indigo-500 text-zinc-100' 
+                ? 'border-[#A3E635] text-zinc-100' 
                 : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
           >
@@ -118,7 +118,7 @@ export function AgentManager() {
             onClick={() => setActiveTab('skills')}
             className={`flex items-center pb-2 px-3 text-xs font-medium border-b-2 transition-colors ${
               activeTab === 'skills' 
-                ? 'border-indigo-500 text-zinc-100' 
+                ? 'border-[#A3E635] text-zinc-100' 
                 : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
           >
@@ -135,7 +135,7 @@ export function AgentManager() {
                   <button
                     key={agent.id}
                     onClick={() => setActiveAgentId(agent.id)}
-                    className={cn("w-full text-left px-3 py-2 text-sm rounded-md truncate transition-colors flex items-center justify-between group", activeAgentId === agent.id ? "bg-indigo-500/10 text-indigo-400" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200")}
+                    className={cn("w-full text-left px-3 py-2 text-sm rounded-md truncate transition-colors flex items-center justify-between group", activeAgentId === agent.id ? "bg-[#A3E635]/10 text-[#A3E635]" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200")}
                   >
                     <span className="truncate">{agent.name}</span>
                     {agent.isCustom && (
@@ -153,7 +153,7 @@ export function AgentManager() {
                   <button
                     key={skill.id}
                     onClick={() => setSelectedSkillId(skill.id)}
-                    className={cn("w-full text-left px-3 py-2 text-sm rounded-md truncate transition-colors flex items-center justify-between group", selectedSkillId === skill.id ? "bg-indigo-500/10 text-indigo-400" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200")}
+                    className={cn("w-full text-left px-3 py-2 text-sm rounded-md truncate transition-colors flex items-center justify-between group", selectedSkillId === skill.id ? "bg-[#A3E635]/10 text-[#A3E635]" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200")}
                   >
                     <span className="flex items-center truncate"><Code2 className="w-3.5 h-3.5 mr-2 text-zinc-500 shrink-0" />{skill.name}</span>
                     <Trash2 
@@ -202,7 +202,7 @@ export function AgentManager() {
                   value={editingAgent.name}
                   onChange={(e) => setEditingAgent({ ...editingAgent, name: e.target.value })}
                   disabled={!editingAgent.isCustom}
-                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-mono disabled:opacity-50"
+                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#A3E635] focus:ring-1 focus:ring-[#A3E635]/20 font-mono disabled:opacity-50"
                 />
               </div>
 
@@ -214,7 +214,7 @@ export function AgentManager() {
                   onChange={(e) => setEditingAgent({ ...editingAgent, command: e.target.value })}
                   disabled={!editingAgent.isCustom}
                   placeholder="e.g. claude or aider"
-                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-mono disabled:opacity-50"
+                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#A3E635] focus:ring-1 focus:ring-[#A3E635]/20 font-mono disabled:opacity-50"
                 />
               </div>
 
@@ -226,7 +226,7 @@ export function AgentManager() {
                   onChange={(e) => setEditingAgent({ ...editingAgent, args: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
                   disabled={!editingAgent.isCustom}
                   placeholder="e.g. --model, sonnet"
-                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-mono disabled:opacity-50"
+                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#A3E635] focus:ring-1 focus:ring-[#A3E635]/20 font-mono disabled:opacity-50"
                 />
               </div>
 
@@ -237,7 +237,7 @@ export function AgentManager() {
                   onChange={(e) => setEditingAgent({ ...editingAgent, systemPrompt: e.target.value })}
                   rows={8}
                   disabled={!editingAgent.isCustom}
-                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-mono disabled:opacity-50 resize-y"
+                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#A3E635] focus:ring-1 focus:ring-[#A3E635]/20 font-mono disabled:opacity-50 resize-y"
                 />
               </div>
 
@@ -245,7 +245,7 @@ export function AgentManager() {
                 <div className="flex justify-end pt-4">
                   <button 
                     onClick={handleSaveAgent}
-                    className="flex items-center px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-sm transition-colors shadow-none"
+                    className="flex items-center px-4 py-2 bg-[#A3E635] hover:bg-[#8bc926] text-black border-2 border-black font-bold tracking-wide text-sm font-medium rounded-sm transition-colors shadow-none"
                   >
                     <Save className="w-4 h-4 mr-2" /> Save Changes
                   </button>
@@ -267,7 +267,7 @@ export function AgentManager() {
                   type="text" 
                   value={editingSkill.name}
                   onChange={(e) => setEditingSkill({ ...editingSkill, name: e.target.value })}
-                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-mono"
+                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#A3E635] focus:ring-1 focus:ring-[#A3E635]/20 font-mono"
                 />
               </div>
 
@@ -278,7 +278,7 @@ export function AgentManager() {
                   value={editingSkill.description}
                   onChange={(e) => setEditingSkill({ ...editingSkill, description: e.target.value })}
                   placeholder="Explain what this tool does to the LLM..."
-                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                  className="w-full bg-[#111113] border border-zinc-800 rounded-sm px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#A3E635] focus:ring-1 focus:ring-[#A3E635]/20"
                 />
               </div>
 
@@ -288,7 +288,7 @@ export function AgentManager() {
                   value={editingSkill.command}
                   onChange={(e) => setEditingSkill({ ...editingSkill, command: e.target.value })}
                   rows={4}
-                  className="w-full bg-black border border-zinc-800 rounded-sm px-3 py-2 text-sm text-emerald-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-mono"
+                  className="w-full bg-black border border-zinc-800 rounded-sm px-3 py-2 text-sm text-[#A3E635] focus:outline-none focus:border-[#A3E635] focus:ring-1 focus:ring-[#A3E635]/20 font-mono"
                 />
                 <p className="text-xs text-zinc-600 mt-2">Use <code className="bg-zinc-800 px-1 rounded text-zinc-400">{`\${paramName}`}</code> inside the command to inject arguments passed by the AI.</p>
               </div>
@@ -296,7 +296,7 @@ export function AgentManager() {
               <div className="flex justify-end pt-4">
                 <button 
                   onClick={handleSaveSkill}
-                  className="flex items-center px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-sm transition-colors shadow-none"
+                  className="flex items-center px-4 py-2 bg-[#A3E635] hover:bg-[#8bc926] text-black border-2 border-black font-bold tracking-wide text-sm font-medium rounded-sm transition-colors shadow-none"
                 >
                   <Save className="w-4 h-4 mr-2" /> Save Skill
                 </button>

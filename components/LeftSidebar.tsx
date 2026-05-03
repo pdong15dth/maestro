@@ -55,7 +55,7 @@ function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
 
   return (
     <div
-      className="flex items-center mb-1 hover:text-emerald-400 cursor-pointer transition-colors duration-150 select-none"
+      className="flex items-center mb-1 hover:text-[#A3E635] cursor-pointer transition-colors duration-150 select-none"
       style={{ paddingLeft: `${depth * 12 + 16}px` }}
       onClick={() => onFileClick(node)}
     >
@@ -121,10 +121,10 @@ export function LeftSidebar() {
       <div className="relative shrink-0 border-b border-zinc-800/80 bg-zinc-950/50 p-2">
         <button
           onClick={() => setIsWorkspaceMenuOpen(!isWorkspaceMenuOpen)}
-          className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-800/50 group"
+          className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-800/50 group"
         >
           <div className="flex items-center overflow-hidden">
-            <FolderGit2 className="w-4 h-4 text-indigo-400 mr-2 shrink-0 group-hover:scale-110 transition-transform" />
+            <FolderGit2 className="w-4 h-4 text-[#A3E635] mr-2 shrink-0 group-hover:scale-110 transition-transform" />
             <span className="text-sm font-medium text-zinc-200 truncate">
               {currentWorkspace ? currentWorkspace.split(/[/\\]/).pop() : 'No Workspace'}
             </span>
@@ -147,14 +147,14 @@ export function LeftSidebar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -5, scale: 0.98 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute top-14 left-2 right-2 z-50 bg-[#111113] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
+                className="absolute top-14 left-2 right-2 z-50 bg-[#111113] border border-zinc-800 rounded-sm shadow-2xl overflow-hidden"
               >
                 <div className="p-1">
                   <button
                     onClick={handleOpenFolder}
-                    className="w-full flex items-center px-3 py-2 text-sm text-zinc-200 hover:bg-indigo-500/10 hover:text-indigo-400 rounded-lg transition-colors group"
+                    className="w-full flex items-center px-3 py-2 text-sm text-zinc-200 hover:bg-[#A3E635]/10 hover:text-[#A3E635] rounded-sm transition-colors group"
                   >
-                    <FolderOpen className="w-4 h-4 mr-2 text-zinc-400 group-hover:text-indigo-400 transition-colors" />
+                    <FolderOpen className="w-4 h-4 mr-2 text-zinc-400 group-hover:text-[#A3E635] transition-colors" />
                     Open Another Folder...
                   </button>
                 </div>
@@ -169,7 +169,7 @@ export function LeftSidebar() {
                         <button
                           key={path}
                           onClick={() => handleSelectRecent(path)}
-                          className="w-full flex items-center px-3 py-2 text-left text-sm hover:bg-zinc-800/50 rounded-lg transition-colors group"
+                          className="w-full flex items-center px-3 py-2 text-left text-sm hover:bg-zinc-800/50 rounded-sm transition-colors group"
                         >
                           <History className="w-3.5 h-3.5 mr-2 text-zinc-500 group-hover:text-zinc-400 shrink-0" />
                           <span className="truncate text-zinc-400 group-hover:text-zinc-200">
@@ -192,7 +192,7 @@ export function LeftSidebar() {
           onClick={() => setActiveTab('explorer')}
           className={`flex items-center pb-2 px-3 text-xs font-medium border-b-2 transition-colors ${
             activeTab === 'explorer' 
-              ? 'border-indigo-500 text-zinc-100' 
+              ? 'border-[#A3E635] text-zinc-100' 
               : 'border-transparent text-zinc-500 hover:text-zinc-300'
           }`}
         >
@@ -203,7 +203,7 @@ export function LeftSidebar() {
           onClick={() => setActiveTab('agents')}
           className={`flex items-center pb-2 px-3 text-xs font-medium border-b-2 transition-colors ${
             activeTab === 'agents' 
-              ? 'border-indigo-500 text-zinc-100' 
+              ? 'border-[#A3E635] text-zinc-100' 
               : 'border-transparent text-zinc-500 hover:text-zinc-300'
           }`}
         >
@@ -256,11 +256,11 @@ export function LeftSidebar() {
                     onClick={() => handleAgentClick(agent.id)}
                   >
                     <div className="flex items-center min-w-0">
-                      <div className={`w-2 h-2 rounded-full mr-3 shrink-0 ${agent.isCustom ? 'bg-indigo-400' : 'bg-emerald-400'}`} />
+                      <div className={`w-2 h-2 rounded-full mr-3 shrink-0 ${agent.isCustom ? 'bg-[#A3E635]' : 'bg-zinc-500'}`} />
                       <div className="truncate text-sm font-medium text-zinc-200">{agent.name}</div>
                     </div>
                     {!agent.isCustom && (
-                      <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded ml-2 shrink-0">Default</span>
+                      <span className="text-[10px] bg-[#A3E635]/20 text-[#A3E635] px-1.5 py-0.5 rounded ml-2 shrink-0">Default</span>
                     )}
                   </div>
                 ))}

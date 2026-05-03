@@ -70,7 +70,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     
     if (state === 'passed') {
       return (
-        <div className="flex items-center text-emerald-400 text-sm font-medium">
+        <div className="flex items-center text-[#A3E635] text-sm font-medium">
           <CheckCircle2 className="w-4 h-4 mr-1.5" />
           Passed
         </div>
@@ -88,7 +88,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div 
-        className="bg-[#111113] border border-zinc-800 rounded-xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
+        className="bg-[#111113] border border-zinc-800 rounded-sm w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-[#0c0c0e]">
@@ -142,24 +142,24 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <button 
                     onClick={runChecks}
                     disabled={Object.values(status).includes('checking')}
-                    className="p-2 text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50"
+                    className="p-2 text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 rounded-sm transition-colors disabled:opacity-50"
                   >
                     <RefreshCw className={`w-4 h-4 ${Object.values(status).includes('checking') ? 'animate-spin' : ''}`} />
                   </button>
                 </div>
                 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-4 bg-zinc-900/30 border border-zinc-800/50 rounded-xl">
+                  <div className="flex items-center justify-between p-4 bg-zinc-900/30 border border-zinc-800/50 rounded-sm">
                     <span className="text-sm text-zinc-300 font-medium">Node.js Version (&gt;=18)</span>
                     {renderStatus(status.node)}
                   </div>
                   
-                  <div className="flex items-center justify-between p-4 bg-zinc-900/30 border border-zinc-800/50 rounded-xl">
+                  <div className="flex items-center justify-between p-4 bg-zinc-900/30 border border-zinc-800/50 rounded-sm">
                     <span className="text-sm text-zinc-300 font-medium">Claude Code CLI</span>
                     {renderStatus(status.claude)}
                   </div>
 
-                  <div className="flex items-center justify-between p-4 bg-zinc-900/30 border border-zinc-800/50 rounded-xl">
+                  <div className="flex items-center justify-between p-4 bg-zinc-900/30 border border-zinc-800/50 rounded-sm">
                     <span className="text-sm text-zinc-300 font-medium">Git Access</span>
                     {renderStatus(status.git)}
                   </div>
@@ -171,7 +171,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                 <h3 className="text-zinc-200 font-medium text-lg mb-1">General Settings</h3>
                 <p className="text-sm text-zinc-500 mb-6">Configure workspace preferences.</p>
-                <div className="text-sm text-zinc-400 p-4 border border-zinc-800/50 bg-zinc-900/30 rounded-xl">
+                <div className="text-sm text-zinc-400 p-4 border border-zinc-800/50 bg-zinc-900/30 rounded-sm">
                   General settings will be implemented in a future update.
                 </div>
               </div>
@@ -181,7 +181,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                 <h3 className="text-zinc-200 font-medium text-lg mb-1">API Keys</h3>
                 <p className="text-sm text-zinc-500 mb-6">Manage external service credentials.</p>
-                <div className="text-sm text-zinc-400 p-4 border border-zinc-800/50 bg-zinc-900/30 rounded-xl">
+                <div className="text-sm text-zinc-400 p-4 border border-zinc-800/50 bg-zinc-900/30 rounded-sm">
                   API key management will be implemented in a future update.
                 </div>
               </div>
@@ -192,7 +192,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <div className="p-4 border-t border-zinc-800 flex justify-end bg-zinc-950">
           <button 
             onClick={onClose}
-            className="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+            className="px-5 py-2 bg-[#A3E635] hover:bg-[#8bc926] text-black border-2 border-black font-bold tracking-wide text-sm font-medium rounded-sm transition-colors shadow-sm"
           >
             Done
           </button>

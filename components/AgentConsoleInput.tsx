@@ -99,10 +99,10 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
       {/* Input Container */}
       <div
         className={cn(
-          "flex flex-col w-full bg-[#0f0f10] border rounded-xl transition-all duration-200",
+          "flex flex-col w-full bg-[#0f0f10] border rounded-sm transition-all duration-200",
           isFocused
-            ? "border-zinc-700/60 ring-1 ring-zinc-700/30"
-            : "border-zinc-800/60"
+            ? "border-[#A3E635]/60 ring-1 ring-[#A3E635]/20"
+            : "border-[#27272A]/60"
         )}
       >
         {/* Textarea */}
@@ -146,7 +146,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
             {/* Attach Button */}
             <button
               type="button"
-              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+              className="flex items-center justify-center w-7 h-7 rounded-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
               title="Attach"
             >
               <Plus className="w-4 h-4" />
@@ -158,7 +158,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
                 type="button"
                 onClick={() => setIsAgentOpen(!isAgentOpen)}
                 className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors",
+                  "flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-medium transition-colors",
                   isAgentOpen ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
                 )}
               >
@@ -168,7 +168,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
               </button>
 
               {isAgentOpen && (
-                <div className="absolute bottom-full left-0 mb-1.5 w-52 bg-[#18181b] border border-zinc-800 rounded-lg shadow-xl shadow-black/50 overflow-hidden z-50">
+                <div className="absolute bottom-full left-0 mb-1.5 w-52 bg-[#18181b] border border-zinc-800 rounded-sm shadow-xl shadow-black/50 overflow-hidden z-50">
                   <div className="py-1">
                     {agents.length === 0 && (
                       <div className="px-3 py-2 text-xs text-zinc-500">No agents configured</div>
@@ -184,7 +184,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
                         className="w-full flex items-center justify-between px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors text-left"
                       >
                         <span className="truncate">{agent.name}</span>
-                        {activeAgentId === agent.id && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                        {activeAgentId === agent.id && <Check className="w-3.5 h-3.5 text-[#A3E635] shrink-0" />}
                       </button>
                     ))}
                   </div>
@@ -198,7 +198,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
                 type="button"
                 onClick={() => setIsModeOpen(!isModeOpen)}
                 className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors",
+                  "flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-medium transition-colors",
                   isModeOpen ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
                 )}
               >
@@ -207,7 +207,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
               </button>
 
               {isModeOpen && (
-                <div className="absolute bottom-full left-0 mb-1.5 w-32 bg-[#18181b] border border-zinc-800 rounded-lg shadow-xl shadow-black/50 overflow-hidden z-50">
+                <div className="absolute bottom-full left-0 mb-1.5 w-32 bg-[#18181b] border border-zinc-800 rounded-sm shadow-xl shadow-black/50 overflow-hidden z-50">
                   <div className="py-1">
                     {(['Plan', 'Edit', 'Chat'] as AgentMode[]).map((m) => (
                       <button
@@ -220,7 +220,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
                         className="w-full flex items-center justify-between px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors text-left"
                       >
                         <span>{m}</span>
-                        {mode === m && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                        {mode === m && <Check className="w-3.5 h-3.5 text-[#A3E635] shrink-0" />}
                       </button>
                     ))}
                   </div>
@@ -231,7 +231,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
             {/* Tools / Settings */}
             <button
               type="button"
-              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+              className="flex items-center justify-center w-7 h-7 rounded-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
               title="Settings"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -245,7 +245,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
                   e.preventDefault();
                   onStop();
                 }}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
               >
                 <StopCircle className="w-3.5 h-3.5" />
                 Stop
@@ -264,7 +264,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
             className={cn(
               "flex items-center justify-center w-8 h-8 rounded-full border transition-all duration-200",
               value.trim()
-                ? "border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:border-zinc-500"
+                ? "border-[#A3E635] text-[#09090B] bg-[#A3E635] hover:bg-[#8bc926] hover:border-[#8bc926] shadow-[2px_2px_0px_#000000]"
                 : "border-zinc-800 text-zinc-600 cursor-not-allowed"
             )}
           >
@@ -276,7 +276,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning
       {/* Bottom Context Bar */}
       <div className="flex items-center gap-3 px-1">
         <button className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[#A3E635]/80" />
           Local
           <ChevronDown className="w-3 h-3" />
         </button>

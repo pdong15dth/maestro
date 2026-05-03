@@ -27,7 +27,7 @@ function AnsiMessage({ content, role }: { content: string; role: 'user' | 'agent
     <div
       className={cn(
         "text-sm whitespace-pre-wrap leading-relaxed",
-        role === 'user' ? "text-indigo-300" : role === 'agent' ? "text-zinc-300" : "text-zinc-500 italic"
+        role === 'user' ? "text-[#A3E635]" : role === 'agent' ? "text-zinc-300" : "text-zinc-500 italic"
       )}
       dangerouslySetInnerHTML={role === 'agent' ? { __html: html } : undefined}
     >
@@ -155,7 +155,7 @@ export default function Page() {
           
           <button
              onClick={() => openTab({ id: 'agent-manager', type: 'agent-manager', title: 'Agent Manager' })}
-             className="text-xs font-medium text-emerald-400 hover:text-emerald-300 ml-4 border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 rounded flex items-center transition-colors"
+             className="text-xs font-medium text-[#A3E635] hover:text-[#8bc926] ml-4 border border-[#A3E635]/20 bg-[#A3E635]/10 px-2 py-1 rounded flex items-center transition-colors"
           >
              <Bot className="w-3.5 h-3.5 mr-1.5" />
              Agents & Skills
@@ -172,10 +172,10 @@ export default function Page() {
         
         <div className="flex items-center gap-3">
           <div className={cn(
-            "flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-medium",
-            isRunning ? "text-emerald-400" : "text-zinc-500"
+            "flex items-center gap-2 px-3 py-1 rounded-full bg-[#A3E635]/10 border border-[#A3E635]/20 text-xs font-medium",
+            isRunning ? "text-[#A3E635]" : "text-zinc-500"
           )}>
-             <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isRunning ? "bg-emerald-500" : "bg-zinc-600")} />
+             <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isRunning ? "bg-[#A3E635]" : "bg-zinc-600")} />
              {isRunning ? 'Agent Running' : 'Core Online'}
           </div>
           <button 
@@ -199,7 +199,7 @@ export default function Page() {
           )}
           {isLeftSidebarOpen && (
               <PanelResizeHandle className="w-3 group flex items-center justify-center cursor-col-resize outline-none hover:bg-zinc-800/50 transition-colors z-10 transition-all">
-                <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-indigo-500/50 transition-colors" />
+                <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-[#A3E635]/50 transition-colors" />
               </PanelResizeHandle>
           )}
 
@@ -216,7 +216,7 @@ export default function Page() {
                      activeTabId === tab.id ? "bg-[#111113] text-zinc-100" : "bg-[#0a0a0b] text-zinc-500 hover:bg-zinc-900"
                    )}
                  >
-                   {activeTabId === tab.id && <div className="absolute top-0 left-0 w-full h-0.5 bg-indigo-500" />}
+                   {activeTabId === tab.id && <div className="absolute top-0 left-0 w-full h-0.5 bg-[#A3E635]" />}
                    {tab.type === 'file' && <Code2 className="w-3.5 h-3.5 mr-2 shrink-0" />}
                    {tab.type === 'agent-manager' && <Bot className="w-3.5 h-3.5 mr-2 shrink-0" />}
                    {tab.type === 'terminal' && <Terminal className="w-3.5 h-3.5 mr-2 shrink-0" />}
@@ -252,7 +252,7 @@ export default function Page() {
                          ))}
                        </div>
                        <form onSubmit={handleTerminalSubmit} className="flex items-center gap-2 border-t border-zinc-800 pt-4 mt-auto shrink-0">
-                         <span className="text-emerald-500 font-bold">$</span>
+                         <span className="text-[#A3E635] font-bold">$</span>
                          <input 
                            type="text" 
                            value={terminalInput}
@@ -270,13 +270,13 @@ export default function Page() {
           </Panel>
 
            <PanelResizeHandle className="w-3 group flex items-center justify-center cursor-col-resize outline-none hover:bg-zinc-800/50 transition-colors z-10 transition-all">
-             <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-indigo-500/50 transition-colors" />
+             <div className="w-[1px] h-full bg-zinc-800 group-hover:bg-[#A3E635]/50 transition-colors" />
            </PanelResizeHandle>
            
            <Panel defaultSize={25} minSize={20} maxSize={50} className="flex flex-col min-w-0 bg-[#0c0c0e] relative border-l border-zinc-800">
              <div className="h-12 border-b border-zinc-800/80 shrink-0 flex items-center justify-between px-4 bg-[#0c0c0e] z-30 relative">
                <div className="flex items-center">
-                 <Terminal className="w-4 h-4 text-emerald-400 mr-2" />
+                 <Terminal className="w-4 h-4 text-[#A3E635] mr-2" />
                  <span className="text-xs font-semibold text-zinc-300">&gt;_ Agent Console</span>
                </div>
                <button 
@@ -304,12 +304,12 @@ export default function Page() {
                          animate={{ y: 0 }}
                          exit={{ y: "-100%" }}
                          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                         className="absolute top-0 left-0 right-0 z-20 bg-[#111113] border-b border-zinc-800/80 shadow-2xl overflow-hidden rounded-b-xl"
+                         className="absolute top-0 left-0 right-0 z-20 bg-[#111113] border-b border-zinc-800/80 shadow-2xl overflow-hidden rounded-b-sm"
                      >
                        <div className="p-3">
                          <button 
                            onClick={() => setShowAgentHistory(false)}
-                           className="w-full flex items-center justify-center gap-2 py-2 mb-3 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 rounded-md text-sm font-medium transition-colors"
+                           className="w-full flex items-center justify-center gap-2 py-2 mb-3 bg-[#A3E635]/10 text-[#A3E635] hover:bg-[#A3E635]/20 border border-[#A3E635]/20 rounded-md text-sm font-medium transition-colors"
                          >
                            <Plus className="w-4 h-4" />
                            New Session
@@ -337,7 +337,7 @@ export default function Page() {
 
                 {agentMessages.map((msg, i) => (
                   <div key={i} className="text-sm">
-                    {msg.role === 'user' ? <div className="font-semibold text-xs mb-1 text-indigo-400">User</div> : msg.role === 'agent' ? <div className="font-semibold text-xs mb-1 text-emerald-400">Agent</div> : null}
+                    {msg.role === 'user' ? <div className="font-semibold text-xs mb-1 text-[#A3E635]">User</div> : msg.role === 'agent' ? <div className="font-semibold text-xs mb-1 text-[#A3E635]">Agent</div> : null}
                     <AnsiMessage content={msg.content} role={msg.role} />
                   </div>
                 ))}

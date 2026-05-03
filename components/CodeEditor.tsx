@@ -55,7 +55,7 @@ export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
 
   if (!isLoaded) {
     return (
-      <div className="w-full h-full bg-[#1e1e1e] flex items-center justify-center text-zinc-500 text-sm">
+      <div className="w-full h-full bg-[#09090B] flex items-center justify-center text-zinc-500 text-sm">
         Loading...
       </div>
     );
