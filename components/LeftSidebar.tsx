@@ -1,39 +1,111 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FolderGit2, Bot, Trash2, Plus, ChevronDown, FolderOpen, History, Loader2, FileCode, File, Settings } from 'lucide-react';
+import { FolderGit2, Bot, ChevronDown, FolderOpen, History, Loader2, FileCode, File, Settings, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { FileNode } from '@/hooks/useFileSystem';
+import { open } from '@tauri-apps/plugin-dialog';
 
-interface LeftSidebarProps {}
+interface FileTreeNodeProps {
+  node: FileNode;
+  depth?: number;
+  onFileClick: (node: FileNode) => void;
+}
 
-export function LeftSidebar({}: LeftSidebarProps) {
+function FileTreeNode({ node, depth = 0, onFileClick }: FileTreeNodeProps) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (node.isDirectory) {
+    return (
+      <div>
+        <div
+          className="flex items-center mb-1 hover:text-zinc-300 cursor-pointer transition-colors duration-150 select-none"
+          style={{ paddingLeft: `${depth * 12}px` }}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <ChevronRight className={`w-3 h-3 mr-1 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          <FolderOpen className="w-3.5 h-3.5 mr-2 text-zinc-500" />
+          <span className="text-sm font-mono">{node.name}</span>
+        </div>
+        <AnimatePresence>
+          {expanded && node.children && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              {node.children.map((child) => (
+                <FileTreeNode key={child.path} node={child} depth={depth + 1} onFileClick={onFileClick} />
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-center mb-1 hover:text-emerald-400 cursor-pointer transition-colors duration-150 select-none"
+      style={{ paddingLeft: `${depth * 12 + 16}px` }}
+      onClick={() => onFileClick(node)}
+    >
+      {node.name.endsWith('.rs') || node.name.endsWith('.ts') || node.name.endsWith('.tsx') || node.name.endsWith('.js') ? (
+        <FileCode className="w-3.5 h-3.5 mr-2 text-zinc-500" />
+      ) : node.name.endsWith('.toml') || node.name.endsWith('.json') ? (
+        <Settings className="w-3.5 h-3.5 mr-2 text-zinc-500" />
+      ) : (
+        <File className="w-3.5 h-3.5 mr-2 text-zinc-500" />
+      )}
+      <span className="text-sm font-mono">{node.name}</span>
+    </div>
+  );
+}
+
+export function LeftSidebar() {
   const [activeTab, setActiveTab] = useState<'explorer' | 'agents'>('explorer');
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
-  const { currentWorkspace, setCurrentWorkspace, recentWorkspaces, addRecentWorkspace, openTab } = useWorkspace();
+  const {
+    currentWorkspace,
+    setCurrentWorkspace,
+    recentWorkspaces,
+    addRecentWorkspace,
+    loadWorkspace,
+    openTab,
+    fileTree,
+    isLoadingWorkspace,
+    agents,
+    setActiveAgentId,
+  } = useWorkspace();
 
-  const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
-
-  // Simulate loading when workspace changes
-  React.useEffect(() => {
-    if (currentWorkspace) {
-      const waitTimer = setTimeout(() => setIsLoadingWorkspace(true), 0);
-      const timer = setTimeout(() => {
-        setIsLoadingWorkspace(false);
-      }, 600);
-      return () => { clearTimeout(waitTimer); clearTimeout(timer); };
+  const handleOpenFolder = async () => {
+    try {
+      const selected = await open({ directory: true });
+      if (selected && typeof selected === 'string') {
+        setCurrentWorkspace(selected);
+        addRecentWorkspace(selected);
+        await loadWorkspace(selected);
+        setIsWorkspaceMenuOpen(false);
+      }
+    } catch (err) {
+      console.error('Failed to open folder:', err);
     }
-  }, [currentWorkspace]);
+  };
 
-  const handleOpenFolder = () => {
-    const dummyPath = '/Users/dev/another-project-' + Math.floor(Math.random() * 100);
-    setCurrentWorkspace(dummyPath);
-    addRecentWorkspace(dummyPath);
+  const handleSelectRecent = async (path: string) => {
+    setCurrentWorkspace(path);
+    addRecentWorkspace(path);
+    await loadWorkspace(path);
     setIsWorkspaceMenuOpen(false);
   };
 
-  const handleSelectRecent = (path: string) => {
-    setCurrentWorkspace(path);
-    addRecentWorkspace(path);
-    setIsWorkspaceMenuOpen(false);
+  const handleFileClick = (node: FileNode) => {
+    openTab({ id: `file-${node.path}`, type: 'file', title: node.name, data: node.path });
+  };
+
+  const handleAgentClick = (agentId: string) => {
+    setActiveAgentId(agentId);
+    openTab({ id: `agent-manager-${agentId}`, type: 'agent-manager', title: 'Agent Manager' });
   };
 
   return (
@@ -47,7 +119,7 @@ export function LeftSidebar({}: LeftSidebarProps) {
           <div className="flex items-center overflow-hidden">
             <FolderGit2 className="w-4 h-4 text-indigo-400 mr-2 shrink-0 group-hover:scale-110 transition-transform" />
             <span className="text-sm font-medium text-zinc-200 truncate">
-              {currentWorkspace ? currentWorkspace.split('/').pop() : 'No Workspace'}
+              {currentWorkspace ? currentWorkspace.split(/[/\\]/).pop() : 'No Workspace'}
             </span>
           </div>
           <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${isWorkspaceMenuOpen ? 'rotate-180' : ''}`} />
@@ -56,7 +128,6 @@ export function LeftSidebar({}: LeftSidebarProps) {
         <AnimatePresence>
           {isWorkspaceMenuOpen && (
             <>
-              {/* Backdrop */}
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -64,8 +135,6 @@ export function LeftSidebar({}: LeftSidebarProps) {
                 className="fixed inset-0 z-40 bg-black/20"
                 onClick={() => setIsWorkspaceMenuOpen(false)}
               />
-              
-              {/* Dropdown Menu */}
               <motion.div
                 initial={{ opacity: 0, y: -5, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -97,7 +166,7 @@ export function LeftSidebar({}: LeftSidebarProps) {
                         >
                           <History className="w-3.5 h-3.5 mr-2 text-zinc-500 group-hover:text-zinc-400 shrink-0" />
                           <span className="truncate text-zinc-400 group-hover:text-zinc-200">
-                            {path.split('/').pop()}
+                            {path.split(/[/\\]/).pop()}
                           </span>
                         </button>
                       ))}
@@ -154,41 +223,12 @@ export function LeftSidebar({}: LeftSidebarProps) {
                    </div>
                    <div>Reading tree...</div>
                 </div>
+              ) : fileTree.length === 0 ? (
+                <div className="text-xs text-zinc-600 py-4 text-center">No files found</div>
               ) : (
-                <>
-                  <div className="flex items-center mb-2 hover:text-zinc-300 cursor-pointer transition-colors duration-150">
-                    <FolderOpen className="w-3.5 h-3.5 mr-2 text-zinc-500" />
-                    src/
-                  </div>
-                  <div 
-                    onClick={() => openTab({ id: 'file-main.rs', type: 'file', title: 'main.rs', data: 'src/main.rs' })}
-                    className="flex items-center ml-4 mb-2 hover:text-emerald-400 cursor-pointer transition-colors duration-150"
-                  >
-                    <FileCode className="w-3.5 h-3.5 mr-2" />
-                    main.rs
-                  </div>
-                  <div 
-                    onClick={() => openTab({ id: 'file-lib.rs', type: 'file', title: 'lib.rs', data: 'src/lib.rs' })}
-                    className="flex items-center ml-4 mb-2 hover:text-zinc-300 cursor-pointer transition-colors duration-150"
-                  >
-                    <FileCode className="w-3.5 h-3.5 mr-2 text-zinc-500" />
-                    lib.rs
-                  </div>
-                  <div 
-                    onClick={() => openTab({ id: 'file-cargo.toml', type: 'file', title: 'Cargo.toml', data: 'Cargo.toml' })}
-                    className="flex items-center mb-2 hover:text-zinc-300 cursor-pointer transition-colors duration-150"
-                  >
-                    <Settings className="w-3.5 h-3.5 mr-2 text-zinc-500" />
-                    Cargo.toml
-                  </div>
-                  <div 
-                    onClick={() => openTab({ id: 'file-env', type: 'file', title: '.env', data: '.env' })}
-                    className="flex items-center hover:text-zinc-300 cursor-pointer transition-colors duration-150"
-                  >
-                    <File className="w-3.5 h-3.5 mr-2 text-zinc-500" />
-                    .env
-                  </div>
-                </>
+                fileTree.map((node) => (
+                  <FileTreeNode key={node.path} node={node} onFileClick={handleFileClick} />
+                ))
               )}
             </div>
           </div>
@@ -199,36 +239,24 @@ export function LeftSidebar({}: LeftSidebarProps) {
             <div className="p-3">
               <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-3 px-1">Configured Agents</div>
               <div className="space-y-1">
-                <div
-                  className="group flex items-center justify-between p-2.5 rounded-md cursor-pointer transition-colors bg-[#111113] border border-indigo-500/30 hover:border-indigo-500/50"
-                  onClick={() => openTab({ id: 'agent-manager', type: 'agent-manager', title: 'Agent Manager' })}
-                >
-                  <div className="flex items-center min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 mr-3 shrink-0" />
-                    <div className="truncate text-sm font-medium text-zinc-200">Claude Code</div>
+                {agents.length === 0 && (
+                  <div className="text-xs text-zinc-600 py-2 text-center">No agents configured</div>
+                )}
+                {agents.map((agent) => (
+                  <div
+                    key={agent.id}
+                    className="group flex items-center justify-between p-2.5 rounded-md cursor-pointer transition-colors hover:bg-zinc-800/50"
+                    onClick={() => handleAgentClick(agent.id)}
+                  >
+                    <div className="flex items-center min-w-0">
+                      <div className={`w-2 h-2 rounded-full mr-3 shrink-0 ${agent.isCustom ? 'bg-indigo-400' : 'bg-emerald-400'}`} />
+                      <div className="truncate text-sm font-medium text-zinc-200">{agent.name}</div>
+                    </div>
+                    {!agent.isCustom && (
+                      <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded ml-2 shrink-0">Default</span>
+                    )}
                   </div>
-                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded ml-2 shrink-0">Default</span>
-                </div>
-                
-                <div
-                  className="group flex items-center justify-between p-2.5 rounded-md cursor-pointer transition-colors hover:bg-zinc-800/50"
-                  onClick={() => openTab({ id: 'agent-manager', type: 'agent-manager', title: 'Agent Manager' })}
-                >
-                  <div className="flex items-center min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-zinc-600 mr-3 shrink-0" />
-                    <div className="truncate text-sm font-medium text-zinc-400 group-hover:text-zinc-300">Aider</div>
-                  </div>
-                </div>
-
-                <div
-                  className="group flex items-center justify-between p-2.5 rounded-md cursor-pointer transition-colors hover:bg-zinc-800/50"
-                  onClick={() => openTab({ id: 'agent-manager', type: 'agent-manager', title: 'Agent Manager' })}
-                >
-                  <div className="flex items-center min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-zinc-600 mr-3 shrink-0" />
-                    <div className="truncate text-sm font-medium text-zinc-400 group-hover:text-zinc-300">Local Ollama</div>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>

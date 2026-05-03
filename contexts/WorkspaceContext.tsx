@@ -1,6 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
+import { useFileSystem, FileNode } from '@/hooks/useFileSystem';
+import { useAgentStore, Agent, Skill } from '@/hooks/useAgentStore';
 
 export type TabType = 'chat' | 'file' | 'agent-manager' | 'diff' | 'terminal';
 
@@ -21,37 +23,70 @@ interface WorkspaceContextType {
   openTab: (tab: WorkspaceTab) => void;
   closeTab: (tabId: string) => void;
   setActiveTabId: (tabId: string) => void;
+  // File system
+  fileTree: FileNode[];
+  isLoadingWorkspace: boolean;
+  loadWorkspace: (path: string) => Promise<void>;
+  readFile: (path: string) => Promise<string>;
+  writeFile: (path: string, content: string) => Promise<void>;
+  // Agents & Skills
+  agents: Agent[];
+  skills: Skill[];
+  agentStoreReady: boolean;
+  saveAgents: (agents: Agent[]) => Promise<void>;
+  saveSkills: (skills: Skill[]) => Promise<void>;
+  activeAgentId: string | null;
+  setActiveAgentId: (id: string | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
+const STORAGE_KEY = 'maestro-recent-workspaces';
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [currentWorkspace, setCurrentWorkspace] = useState<string | null>(null);
-  const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>([
-    '/Users/dev/frontend-app',
-    '/Users/dev/backend-api',
-  ]);
-  
+  const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        return stored ? JSON.parse(stored) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
   const [tabs, setTabs] = useState<WorkspaceTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
 
-  const addRecentWorkspace = (workspace: string) => {
+  const { fileTree, isLoading: isLoadingWorkspace, loadWorkspace, readFile, writeFile } = useFileSystem();
+  const { agents, skills, ready: agentStoreReady, saveAgents, saveSkills } = useAgentStore();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(recentWorkspaces));
+    }
+  }, [recentWorkspaces]);
+
+  const addRecentWorkspace = useCallback((workspace: string) => {
     setRecentWorkspaces((prev) => {
       const newRecent = prev.filter((w) => w !== workspace);
-      return [workspace, ...newRecent].slice(0, 5); // Keep top 5
+      return [workspace, ...newRecent].slice(0, 5);
     });
-  };
+  }, []);
 
-  const openTab = (newTab: WorkspaceTab) => {
+  const openTab = useCallback((newTab: WorkspaceTab) => {
     setTabs((prev) => {
       const exists = prev.find((t) => t.id === newTab.id);
       if (exists) return prev;
       return [...prev, newTab];
     });
     setActiveTabId(newTab.id);
-  };
+  }, []);
 
-  const closeTab = (tabId: string) => {
+  const closeTab = useCallback((tabId: string) => {
     setTabs((prev) => {
       const newTabs = prev.filter((t) => t.id !== tabId);
       if (activeTabId === tabId) {
@@ -59,7 +94,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       return newTabs;
     });
-  };
+  }, [activeTabId]);
 
   return (
     <WorkspaceContext.Provider
@@ -73,6 +108,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         openTab,
         closeTab,
         setActiveTabId,
+        fileTree,
+        isLoadingWorkspace,
+        loadWorkspace,
+        readFile,
+        writeFile,
+        agents,
+        skills,
+        agentStoreReady,
+        saveAgents,
+        saveSkills,
+        activeAgentId,
+        setActiveAgentId,
       }}
     >
       {children}

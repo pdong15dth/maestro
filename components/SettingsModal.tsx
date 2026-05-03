@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -20,22 +21,35 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     git: 'checking'
   });
 
-  const runChecks = () => {
+  const runChecks = async () => {
     setStatus({ node: 'checking', claude: 'checking', git: 'checking' });
     
-    setTimeout(() => setStatus(prev => ({ ...prev, node: 'passed' })), 800);
-    setTimeout(() => setStatus(prev => ({ ...prev, claude: 'failed' })), 1500);
-    setTimeout(() => setStatus(prev => ({ ...prev, git: 'passed' })), 2200);
+    try {
+      const nodeOk = await invoke<boolean>('check_cli', { path: 'node' }).catch(() => false);
+      setStatus(prev => ({ ...prev, node: nodeOk ? 'passed' : 'failed' }));
+    } catch {
+      setStatus(prev => ({ ...prev, node: 'failed' }));
+    }
+
+    try {
+      const claudeOk = await invoke<boolean>('check_cli', { path: 'claude' }).catch(() => false);
+      setStatus(prev => ({ ...prev, claude: claudeOk ? 'passed' : 'failed' }));
+    } catch {
+      setStatus(prev => ({ ...prev, claude: 'failed' }));
+    }
+
+    try {
+      const gitOk = await invoke<boolean>('check_cli', { path: 'git' }).catch(() => false);
+      setStatus(prev => ({ ...prev, git: gitOk ? 'passed' : 'failed' }));
+    } catch {
+      setStatus(prev => ({ ...prev, git: 'failed' }));
+    }
   };
 
   useEffect(() => {
-    let timeout: NodeJS.Timeout;
     if (isOpen && activeTab === 'health') {
-      timeout = setTimeout(() => {
-        runChecks();
-      }, 0);
+      runChecks();
     }
-    return () => clearTimeout(timeout);
   }, [isOpen, activeTab]);
 
   if (!isOpen) return null;
@@ -158,7 +172,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <h3 className="text-zinc-200 font-medium text-lg mb-1">General Settings</h3>
                 <p className="text-sm text-zinc-500 mb-6">Configure workspace preferences.</p>
                 <div className="text-sm text-zinc-400 p-4 border border-zinc-800/50 bg-zinc-900/30 rounded-xl">
-                  General settings placeholder.
+                  General settings will be implemented in a future update.
                 </div>
               </div>
             )}
@@ -168,7 +182,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <h3 className="text-zinc-200 font-medium text-lg mb-1">API Keys</h3>
                 <p className="text-sm text-zinc-500 mb-6">Manage external service credentials.</p>
                 <div className="text-sm text-zinc-400 p-4 border border-zinc-800/50 bg-zinc-900/30 rounded-xl">
-                  API keys placeholder.
+                  API key management will be implemented in a future update.
                 </div>
               </div>
             )}

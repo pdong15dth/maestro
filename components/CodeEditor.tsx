@@ -1,5 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface CodeEditorProps {
   filePath: string;
@@ -9,14 +10,64 @@ interface CodeEditorProps {
 export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
+  const { readFile, writeFile } = useWorkspace();
+  const [content, setContent] = useState(initialCode);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Load file content when filePath changes
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoaded(false);
+    readFile(filePath)
+      .then((text) => {
+        if (!cancelled) {
+          setContent(text);
+          setIsLoaded(true);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to read file:', err);
+        if (!cancelled) {
+          setContent(`// Error loading ${filePath}\n// ${err}`);
+          setIsLoaded(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [filePath, readFile]);
 
   const handleEditorDidMount = (editor: any) => {
     editorRef.current = editor;
+
+    // Wire Ctrl+S / Cmd+S to save
+    if (monaco) {
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+        const currentValue = editor.getValue();
+        writeFile(filePath, currentValue).catch((err) => {
+          console.error('Failed to save file:', err);
+        });
+      });
+    }
   };
 
-  // Determine language blindly from extension
+  // Determine language from extension
   const extension = filePath.split('.').pop() || '';
-  const language = extension === 'rs' ? 'rust' : extension === 'ts' || extension === 'tsx' ? 'typescript' : extension === 'js' ? 'javascript' : extension === 'json' ? 'json' : 'plaintext';
+  const language =
+    extension === 'rs' ? 'rust' :
+    extension === 'ts' || extension === 'tsx' ? 'typescript' :
+    extension === 'js' ? 'javascript' :
+    extension === 'json' ? 'json' :
+    extension === 'md' ? 'markdown' :
+    extension === 'py' ? 'python' :
+    extension === 'toml' ? 'ini' :
+    'plaintext';
+
+  if (!isLoaded) {
+    return (
+      <div className="w-full h-full bg-[#1e1e1e] flex items-center justify-center text-zinc-500 text-sm">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full bg-[#1e1e1e]">
@@ -24,8 +75,9 @@ export function CodeEditor({ filePath, initialCode = '' }: CodeEditorProps) {
         height="100%"
         theme="vs-dark"
         language={language}
-        path={filePath} // Helps monaco resolve model internally
-        defaultValue={initialCode}
+        path={filePath}
+        value={content}
+        onChange={(value) => setContent(value || '')}
         onMount={handleEditorDidMount}
         options={{
           minimap: { enabled: false },

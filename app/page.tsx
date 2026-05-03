@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal, Settings, PanelLeftClose, PanelLeft, Plus, X, MessageSquare, Code2, Bot, History } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
@@ -11,17 +11,33 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { AgentManager } from '@/components/AgentManager';
 import { CodeEditor } from '@/components/CodeEditor';
 import { AgentConsoleInput } from '@/components/AgentConsoleInput';
+import { useAgentProcess } from '@/hooks/useAgentProcess';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { ansiToHtml } from '@/lib/ansi';
 
-const DUMMY_SESSIONS = [
-  { id: '1', title: 'Refactor auth flow', isActive: true },
-  { id: '2', title: 'Debug Rust memory leak' },
-  { id: '3', title: 'Setup GitHub Actions' },
-];
+interface ChatMessage {
+  role: 'user' | 'agent' | 'system';
+  content: string;
+}
+
+function AnsiMessage({ content, role }: { content: string; role: 'user' | 'agent' | 'system' }) {
+  const html = role === 'agent' ? ansiToHtml(content) : content;
+  return (
+    <div
+      className={cn(
+        "text-sm whitespace-pre-wrap leading-relaxed",
+        role === 'user' ? "text-indigo-300" : role === 'agent' ? "text-zinc-300" : "text-zinc-500 italic"
+      )}
+      dangerouslySetInnerHTML={role === 'agent' ? { __html: html } : undefined}
+    >
+      {role !== 'agent' ? html : null}
+    </div>
+  );
+}
 
 export default function Page() {
-  const { currentWorkspace, tabs, activeTabId, openTab, closeTab, setActiveTabId } = useWorkspace();
+  const { currentWorkspace, tabs, activeTabId, openTab, closeTab, setActiveTabId, agents, activeAgentId } = useWorkspace();
   const [showSettings, setShowSettings] = useState(false);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   
@@ -35,23 +51,72 @@ export default function Page() {
   ]);
   const [terminalInput, setTerminalInput] = useState('');
 
-  const [agentMessages, setAgentMessages] = useState<{role: 'user' | 'agent' | 'system', content: string}[]>([
+  const [agentMessages, setAgentMessages] = useState<ChatMessage[]>([
     { role: 'system', content: 'Agent session initialized. Awaiting instructions...' }
   ]);
   const [agentInput, setAgentInput] = useState('');
   const [showAgentHistory, setShowAgentHistory] = useState(false);
-  
-  const handleAgentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!agentInput.trim()) return;
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    setAgentMessages(prev => [...prev, { role: 'user', content: agentInput }]);
-    const req = agentInput.trim();
+  const handleAgentOutput = useCallback((chunk: string) => {
+    setAgentMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === 'agent') {
+        return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
+      }
+      return [...prev, { role: 'agent', content: chunk }];
+    });
+  }, []);
+
+  const { spawn, send, kill, isRunning } = useAgentProcess(handleAgentOutput);
+
+  // Auto-scroll agent console
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [agentMessages]);
+
+  const handleAgentSubmit = async () => {
+    if (!agentInput.trim()) return;
+    const input = agentInput.trim();
+    setAgentMessages(prev => [...prev, { role: 'user', content: input }]);
     setAgentInput('');
-    
-    setTimeout(() => {
-      setAgentMessages(prev => [...prev, { role: 'agent', content: `Acknowledged: ${req}. Processing...` }]);
-    }, 600);
+
+    if (!isRunning) {
+      const agent = agents.find(a => a.id === activeAgentId);
+      if (agent && currentWorkspace) {
+        try {
+          await spawn(agent.command, agent.args, currentWorkspace);
+          // Small delay to ensure process is ready
+          await new Promise(r => setTimeout(r, 300));
+        } catch (err) {
+          console.error('Failed to spawn agent:', err);
+          setAgentMessages(prev => [...prev, { role: 'system', content: `Failed to start agent: ${err}` }]);
+          return;
+        }
+      } else if (!agent) {
+        setAgentMessages(prev => [...prev, { role: 'system', content: 'No agent selected. Please configure an agent first.' }]);
+        return;
+      } else if (!currentWorkspace) {
+        setAgentMessages(prev => [...prev, { role: 'system', content: 'No workspace open. Please open a folder first.' }]);
+        return;
+      }
+    }
+
+    try {
+      await send(input);
+    } catch (err) {
+      console.error('Failed to send input:', err);
+      setAgentMessages(prev => [...prev, { role: 'system', content: `Error: ${err}` }]);
+    }
+  };
+
+  const handleAgentStop = async () => {
+    try {
+      await kill();
+      setAgentMessages(prev => [...prev, { role: 'system', content: 'Agent process stopped.' }]);
+    } catch (err) {
+      console.error('Failed to stop agent:', err);
+    }
   };
 
   const handleTerminalSubmit = (e: React.FormEvent) => {
@@ -85,7 +150,7 @@ export default function Page() {
           </button>
           <div className="flex items-center gap-2 text-sm font-medium text-zinc-400">
             <Terminal className="w-4 h-4 text-zinc-500" />
-            <span className="max-w-[200px] truncate">{currentWorkspace.split('/').pop()}</span>
+            <span className="max-w-[200px] truncate">{currentWorkspace.split(/[/\\]/).pop()}</span>
           </div>
           
           <button
@@ -106,9 +171,12 @@ export default function Page() {
         </div>
         
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-medium text-emerald-400">
-             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-             Core Online
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-medium",
+            isRunning ? "text-emerald-400" : "text-zinc-500"
+          )}>
+             <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isRunning ? "bg-emerald-500" : "bg-zinc-600")} />
+             {isRunning ? 'Agent Running' : 'Core Online'}
           </div>
           <button 
             onClick={() => setShowSettings(true)}
@@ -175,7 +243,7 @@ export default function Page() {
                    style={{ display: activeTabId === tab.id ? 'flex' : 'none', flexDirection: 'column' }}
                  >
                    {tab.type === 'agent-manager' && <AgentManager />}
-                   {tab.type === 'file' && <CodeEditor filePath={tab.data || tab.title} initialCode={`// Viewing ${tab.data || tab.title}\n`} />}
+                   {tab.type === 'file' && <CodeEditor filePath={tab.data || tab.title} />}
                    {tab.type === 'terminal' && (
                      <div className="flex flex-col h-full bg-[#0a0a0b] text-zinc-300 font-mono text-sm p-4">
                        <div className="flex-1 overflow-y-auto space-y-1 pb-4">
@@ -248,19 +316,15 @@ export default function Page() {
                          </button>
                          
                          <div className="space-y-1">
-                           {DUMMY_SESSIONS.map((session) => (
+                           {agentMessages.filter(m => m.role === 'user').map((msg, idx) => (
                              <div
-                               key={session.id}
+                               key={idx}
                                onClick={() => setShowAgentHistory(false)}
-                               className={`group flex items-center justify-between p-2.5 rounded-md cursor-pointer transition-colors ${
-                                 session.isActive 
-                                   ? 'bg-zinc-800 text-zinc-100 border border-zinc-700/50' 
-                                   : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
-                               }`}
+                               className="group flex items-center justify-between p-2.5 rounded-md cursor-pointer transition-colors text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
                              >
                                <div className="flex items-center truncate mr-2">
-                                  <MessageSquare className={`w-3.5 h-3.5 mr-2 shrink-0 ${session.isActive ? 'text-indigo-400' : 'text-zinc-500'}`} />
-                                  <span className="text-sm truncate">{session.title}</span>
+                                  <MessageSquare className="w-3.5 h-3.5 mr-2 shrink-0 text-zinc-500" />
+                                  <span className="text-sm truncate">{msg.content.slice(0, 40)}{msg.content.length > 40 ? '...' : ''}</span>
                                </div>
                              </div>
                            ))}
@@ -272,20 +336,21 @@ export default function Page() {
                </AnimatePresence>
 
                 {agentMessages.map((msg, i) => (
-                  <div key={i} className={cn("text-sm", msg.role === 'user' ? "text-indigo-300" : msg.role === 'agent' ? "text-zinc-300" : "text-zinc-500 italic")}>
+                  <div key={i} className="text-sm">
                     {msg.role === 'user' ? <div className="font-semibold text-xs mb-1 text-indigo-400">User</div> : msg.role === 'agent' ? <div className="font-semibold text-xs mb-1 text-emerald-400">Agent</div> : null}
-                    <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                    <AnsiMessage content={msg.content} role={msg.role} />
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
              </div>
              
              <div className="p-4 border-t border-zinc-800/80 bg-[#0c0c0e] shrink-0">
                <AgentConsoleInput 
                  value={agentInput}
                  onChange={setAgentInput}
-                 onSubmit={() => {
-                   handleAgentSubmit({ preventDefault: () => {} } as React.FormEvent);
-                 }}
+                 onSubmit={handleAgentSubmit}
+                 onStop={handleAgentStop}
+                 isRunning={isRunning}
                />
              </div>
            </Panel>

@@ -9,22 +9,27 @@ import { EditorView, keymap } from '@codemirror/view';
 import { Cpu, SquareTerminal, Sparkles, MessageCircle, StopCircle, ArrowUp, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface AgentConsoleInputProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onStop: () => void;
+  isRunning: boolean;
 }
 
 type AgentMode = 'Plan' | 'Edit' | 'Chat';
 
-export function AgentConsoleInput({ value, onChange, onSubmit }: AgentConsoleInputProps) {
+export function AgentConsoleInput({ value, onChange, onSubmit, onStop, isRunning }: AgentConsoleInputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [mode, setMode] = useState<AgentMode>('Edit');
-  const [model, setModel] = useState('Claude 3.5 Sonnet');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { agents, activeAgentId, setActiveAgentId } = useWorkspace();
+
+  const activeAgent = agents.find(a => a.id === activeAgentId);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -106,25 +111,28 @@ export function AgentConsoleInput({ value, onChange, onSubmit }: AgentConsoleInp
               )}
             >
               <Cpu className="w-3.5 h-3.5" />
-              <span>{model}</span>
+              <span>{activeAgent?.name ?? 'Select Agent'}</span>
             </button>
             
             {/* Drop-up Menu */}
             {isDropdownOpen && (
               <div className="absolute bottom-full left-0 mb-2 w-56 bg-[#18181b] border border-zinc-800/80 rounded-md shadow-xl shadow-black/50 overflow-hidden z-50">
                 <div className="py-1">
-                  {['Claude 3.5 Sonnet', 'Claude 3 Opus', 'Kimi (Moonshot)', 'Ollama: Llama 3 (Local)'].map((m) => (
+                  {agents.length === 0 && (
+                    <div className="px-4 py-2 text-sm text-zinc-500">No agents configured</div>
+                  )}
+                  {agents.map((agent) => (
                     <button
-                      key={m}
+                      key={agent.id}
                       type="button"
                       onClick={() => {
-                        setModel(m);
+                        setActiveAgentId(agent.id);
                         setIsDropdownOpen(false);
                       }}
                       className="w-full flex items-center justify-between px-4 py-2 text-sm text-zinc-300 hover:bg-indigo-600 hover:text-white transition-colors text-left"
                     >
-                      <span className="truncate">{m}</span>
-                      {model === m && <Check className="w-4 h-4 shrink-0" />}
+                      <span className="truncate">{agent.name}</span>
+                      {activeAgentId === agent.id && <Check className="w-4 h-4 shrink-0" />}
                     </button>
                   ))}
                 </div>
@@ -174,7 +182,10 @@ export function AgentConsoleInput({ value, onChange, onSubmit }: AgentConsoleInp
           <button 
             type="button" 
             className="flex items-center justify-center h-7 px-3 rounded-md bg-transparent hover:bg-red-500/10 text-zinc-500 hover:text-red-400 text-xs font-semibold transition-colors gap-1.5"
-            onClick={(e) => e.preventDefault()}
+            onClick={(e) => {
+              e.preventDefault();
+              onStop();
+            }}
           >
             <StopCircle className="w-3.5 h-3.5" />
             Stop
@@ -186,7 +197,7 @@ export function AgentConsoleInput({ value, onChange, onSubmit }: AgentConsoleInp
               e.preventDefault();
               handleSubmit(value);
             }}
-            disabled={!value.trim()} 
+            disabled={!value.trim()}
             className="flex items-center justify-center h-7 px-3 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold transition-colors gap-1.5 shadow-lg shadow-indigo-500/20"
           >
             <ArrowUp className="w-3.5 h-3.5" />

@@ -1,20 +1,28 @@
 import React from 'react';
 import { Terminal, FolderOpen, History, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { open } from '@tauri-apps/plugin-dialog';
 
 export function WelcomeScreen() {
-  const { setCurrentWorkspace, recentWorkspaces, addRecentWorkspace } = useWorkspace();
+  const { setCurrentWorkspace, recentWorkspaces, addRecentWorkspace, loadWorkspace } = useWorkspace();
 
-  const handleSelectWorkspace = () => {
-    // Mocking tauri-plugin-dialog behavior
-    const dummyPath = '/Users/dev/my-awesome-project';
-    setCurrentWorkspace(dummyPath);
-    addRecentWorkspace(dummyPath);
+  const handleSelectWorkspace = async () => {
+    try {
+      const selected = await open({ directory: true });
+      if (selected && typeof selected === 'string') {
+        setCurrentWorkspace(selected);
+        addRecentWorkspace(selected);
+        await loadWorkspace(selected);
+      }
+    } catch (err) {
+      console.error('Failed to open dialog:', err);
+    }
   };
 
-  const handleSelectRecent = (path: string) => {
+  const handleSelectRecent = async (path: string) => {
     setCurrentWorkspace(path);
     addRecentWorkspace(path);
+    await loadWorkspace(path);
   };
 
   return (
@@ -68,4 +76,3 @@ export function WelcomeScreen() {
     </div>
   );
 }
-

@@ -28,3 +28,31 @@
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ANSI Color Classes for Agent Console */
+.ansi-black-fg { color: #3f3f3f; }
+.ansi-red-fg { color: #ff6b6b; }
+.ansi-green-fg { color: #51cf66; }
+.ansi-yellow-fg { color: #fcc419; }
+.ansi-blue-fg { color: #339af0; }
+.ansi-magenta-fg { color: #cc5de8; }
+.ansi-cyan-fg { color: #22b8cf; }
+.ansi-white-fg { color: #e9ecef; }
+
+.ansi-bright-black-fg { color: #495057; }
+.ansi-bright-red-fg { color: #ff8787; }
+.ansi-bright-green-fg { color: #69db7c; }
+.ansi-bright-yellow-fg { color: #ffd43b; }
+.ansi-bright-blue-fg { color: #4dabf7; }
+.ansi-bright-magenta-fg { color: #da77f2; }
+.ansi-bright-cyan-fg { color: #3bc9db; }
+.ansi-bright-white-fg { color: #f8f9fa; }
+
+.ansi-black-bg { background-color: #3f3f3f; }
+.ansi-red-bg { background-color: #ff6b6b; }
+.ansi-green-bg { background-color: #51cf66; }
+.ansi-yellow-bg { background-color: #fcc419; }
+.ansi-blue-bg { background-color: #339af0; }
+.ansi-magenta-bg { background-color: #cc5de8; }
+.ansi-cyan-bg { background-color: #22b8cf; }
+.ansi-white-bg { background-color: #e9ecef; }
