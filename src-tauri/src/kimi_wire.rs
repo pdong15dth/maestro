@@ -1,35 +1,78 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use portable_pty::{Child as PtyChild, CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use tokio::sync::mpsc as tokio_mpsc;
 
 fn resolve_kimi_path() -> String {
+    #[cfg(target_os = "windows")]
+    let which_cmd = "where";
+    #[cfg(not(target_os = "windows"))]
+    let which_cmd = "which";
+
     // Try PATH first
-    if let Ok(output) = std::process::Command::new("which").arg("kimi").output() {
+    if let Ok(output) = std::process::Command::new(which_cmd).arg("kimi").output() {
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let path = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if !path.is_empty() {
                 return path;
             }
         }
     }
-    // Common fallback paths
-    let home = std::env::var("HOME").unwrap_or_default();
-    let candidates = [
-        format!("{}/.local/bin/kimi", home),
-        "/usr/local/bin/kimi".to_string(),
-        "/opt/homebrew/bin/kimi".to_string(),
-        "/usr/bin/kimi".to_string(),
-    ];
-    for c in &candidates {
-        if std::path::Path::new(c).exists() {
-            return c.clone();
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            let candidates = [
+                format!(r"{}\AppData\Roaming\npm\kimi.cmd", home),
+                format!(r"{}\AppData\Roaming\npm\kimi.exe", home),
+                format!(r"{}\.kimi\bin\kimi.exe", home),
+                format!(r"{}\kimi\bin\kimi.exe", home),
+                r"C:\Program Files\kimi\bin\kimi.exe".to_string(),
+                r"C:\Program Files (x86)\kimi\bin\kimi.exe".to_string(),
+            ];
+            for c in &candidates {
+                if std::path::Path::new(c).exists() {
+                    return c.clone();
+                }
+            }
+        }
+        if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+            let candidates = [
+                format!(r"{}\Programs\kimi\kimi.exe", local_appdata),
+                format!(r"{}\kimi\kimi.exe", local_appdata),
+            ];
+            for c in &candidates {
+                if std::path::Path::new(c).exists() {
+                    return c.clone();
+                }
+            }
         }
     }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let candidates = [
+            format!("{}/.local/bin/kimi", home),
+            "/usr/local/bin/kimi".to_string(),
+            "/opt/homebrew/bin/kimi".to_string(),
+            "/usr/bin/kimi".to_string(),
+        ];
+        for c in &candidates {
+            if std::path::Path::new(c).exists() {
+                return c.clone();
+            }
+        }
+    }
+
     "kimi".to_string()
 }
 
@@ -95,8 +138,8 @@ struct JsonRpcMessage {
 // ---------------------------------------------------------------------------
 
 pub struct KimiWireSession {
-    pub child: Box<dyn PtyChild + Send + Sync>,
-    pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    pub child: Arc<Mutex<Child>>,
+    pub writer: Arc<Mutex<ChildStdin>>,
     pub session_id: String,
     pub initialized: bool,
 }
@@ -121,67 +164,79 @@ impl KimiWireManager {
         // Kill existing session with same ID if any
         let _ = self.kill(&session_id);
 
-        let pty_system = NativePtySystem::default();
-        let pair = pty_system
-            .openpty(PtySize {
-                rows: 24,
-                cols: 80,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| e.to_string())?;
-
         let kimi_path = resolve_kimi_path();
-        let mut cmd = CommandBuilder::new(&kimi_path);
+        eprintln!("[kimi-wire] resolved kimi path: {}", &kimi_path);
+
+        let mut cmd = std::process::Command::new(&kimi_path);
         cmd.arg("--wire");
         cmd.arg("-w");
         cmd.arg(&cwd);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
 
-        let child = pair
-            .slave
-            .spawn_command(cmd)
-            .map_err(|e| e.to_string())?;
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+        let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
+        let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
 
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| e.to_string())?;
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| e.to_string())?;
+        let writer_arc = Arc::new(Mutex::new(stdin));
 
-        let writer_arc = Arc::new(Mutex::new(writer));
-
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, String)>(256);
-
-        // --- stdout read loop (PTY master combines stdout+stderr) ---
+        // --- stdout read loop ---
         let sid_clone = session_id.clone();
+        let app_stdout = app.clone();
         std::thread::spawn(move || {
-            let reader = BufReader::new(reader);
+            let reader = BufReader::new(stdout);
             for line_result in reader.lines() {
                 match line_result {
                     Ok(line) => {
                         if line.trim().is_empty() {
                             continue;
                         }
-                        eprintln!("[kimi-wire pty] {}", &line);
-                        if tx.blocking_send((sid_clone.clone(), line)).is_err() {
-                            break;
-                        }
+                        eprintln!("[kimi-wire stdout] {}", &line);
+                        handle_stdout_line(&app_stdout, &sid_clone, &line);
                     }
                     Err(_) => break,
                 }
             }
-            eprintln!("[kimi-wire pty] EOF");
+            eprintln!("[kimi-wire stdout] EOF");
         });
 
-        // --- async event emitter ---
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            while let Some((sid, line)) = rx.recv().await {
-                handle_stdout_line(&app_clone, &sid, &line);
+        // --- stderr read loop ---
+        let sid_err = session_id.clone();
+        let app_stderr = app.clone();
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line_result in reader.lines() {
+                match line_result {
+                    Ok(line) => {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        eprintln!("[kimi-wire stderr] {}", &line);
+                        let _ = app_stderr.emit("kimi-wire-stderr", WireStderrPayload {
+                            session_id: sid_err.clone(),
+                            chunk: line.clone(),
+                        });
+                        // Also forward stderr as raw events so the frontend can show them
+                        let _ = app_stderr.emit("kimi-wire-event", WireEventPayload {
+                            session_id: sid_err.clone(),
+                            event_type: "raw".to_string(),
+                            payload: Value::String(line),
+                        });
+                    }
+                    Err(_) => break,
+                }
             }
+        });
+
+        let child_arc = Arc::new(Mutex::new(child));
+
+        // --- child wait thread (prevents zombies) ---
+        let child_wait = Arc::clone(&child_arc);
+        std::thread::spawn(move || {
+            let _ = child_wait.lock().unwrap().wait();
+            eprintln!("[kimi-wire] child exited");
         });
 
         // Send initialize request
@@ -212,7 +267,7 @@ impl KimiWireManager {
 
         let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
         sessions.insert(session_id.clone(), KimiWireSession {
-            child,
+            child: child_arc,
             writer: writer_arc,
             session_id: session_id.clone(),
             initialized: false,
@@ -280,16 +335,19 @@ impl KimiWireManager {
 
     pub fn kill(&self, session_id: &str) -> Result<(), String> {
         let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-        if let Some(mut session) = sessions.remove(session_id) {
-            let _ = session.child.kill();
+        if let Some(session) = sessions.remove(session_id) {
+            let _ = session.child.lock().map_err(|e| e.to_string())?.kill();
+            // Also close stdin to signal EOF
+            drop(session.writer);
         }
         Ok(())
     }
 
     pub fn kill_all(&self) -> Result<(), String> {
         let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-        for (_, mut session) in sessions.drain() {
-            let _ = session.child.kill();
+        for (_, session) in sessions.drain() {
+            let _ = session.child.lock().map_err(|e| e.to_string())?.kill();
+            drop(session.writer);
         }
         Ok(())
     }
@@ -374,10 +432,8 @@ fn handle_stdout_line(app: &AppHandle, session_id: &str, line: &str) {
             };
             if let Err(e) = app.emit("kimi-wire-ready", &payload) {
                 eprintln!("[kimi-wire] emit error: {:?}", e);
-            }
-            // Also try emitting to the main window directly
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.emit("kimi-wire-ready", &payload);
+            } else {
+                eprintln!("[kimi-wire] emit succeeded");
             }
             return;
         }

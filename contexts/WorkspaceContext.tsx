@@ -54,6 +54,7 @@ interface WorkspaceContextType {
 export interface ChatMessage {
   role: 'user' | 'agent' | 'system';
   content: string;
+  thinking?: string;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);

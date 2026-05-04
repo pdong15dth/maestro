@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { KimiToolCall } from '@/hooks/useKimiWire';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, FileText, Terminal, Globe, Search, Folder } from 'lucide-react';
@@ -18,9 +18,52 @@ const toolIcons: Record<string, React.ReactNode> = {
   Glob: <Folder className="w-3.5 h-3.5" />,
 };
 
+function getToolSummary(tool: KimiToolCall): string {
+  if (!tool.arguments) return tool.name;
+  try {
+    const args = JSON.parse(tool.arguments);
+    switch (tool.name) {
+      case 'Shell': {
+        const cmd = args.command || args.cmd || args.shell || '';
+        // Show first line / first 60 chars
+        const first = cmd.split('\n')[0];
+        return first.length > 60 ? first.slice(0, 60) + '…' : first;
+      }
+      case 'ReadFile':
+      case 'WriteFile':
+      case 'StrReplaceFile': {
+        const path = args.path || args.file || args.filePath || '';
+        return path ? `${tool.name}: ${path}` : tool.name;
+      }
+      case 'Glob': {
+        const pattern = args.pattern || args.glob || '';
+        return pattern ? `Glob: ${pattern}` : tool.name;
+      }
+      case 'Grep': {
+        const pattern = args.pattern || args.query || '';
+        const path = args.path || '';
+        return pattern ? `Grep: "${pattern}"${path ? ` in ${path}` : ''}` : tool.name;
+      }
+      case 'SearchWeb': {
+        const query = args.query || args.q || '';
+        return query ? `Web: ${query}` : tool.name;
+      }
+      case 'FetchURL': {
+        const url = args.url || '';
+        return url ? `Fetch: ${url}` : tool.name;
+      }
+      default:
+        return tool.name;
+    }
+  } catch {
+    return tool.name;
+  }
+}
+
 function SingleToolCard({ tool }: { tool: KimiToolCall }) {
   const [expanded, setExpanded] = useState(false);
   const icon = toolIcons[tool.name] || <Terminal className="w-3.5 h-3.5" />;
+  const summary = useMemo(() => getToolSummary(tool), [tool]);
 
   return (
     <div className="border border-zinc-800 rounded bg-zinc-900/60 overflow-hidden">
@@ -29,13 +72,13 @@ function SingleToolCard({ tool }: { tool: KimiToolCall }) {
         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-zinc-800/50 transition-colors"
       >
         <span className="text-zinc-400">{icon}</span>
-        <span className="font-medium text-zinc-300">{tool.name}</span>
+        <span className="font-medium text-zinc-300 truncate" title={summary}>{summary}</span>
         {tool.result ? (
-          <span className="ml-auto text-[10px] text-emerald-400">Done</span>
+          <span className="ml-auto text-[10px] text-emerald-400 shrink-0">Done</span>
         ) : (
-          <span className="ml-auto text-[10px] text-amber-400 animate-pulse">Running</span>
+          <span className="ml-auto text-[10px] text-amber-400 animate-pulse shrink-0">Running</span>
         )}
-        {expanded ? <ChevronDown className="w-3 h-3 text-zinc-500" /> : <ChevronRight className="w-3 h-3 text-zinc-500" />}
+        {expanded ? <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" /> : <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />}
       </button>
       {expanded && (
         <div className="px-2.5 pb-2 space-y-1.5 border-t border-zinc-800/50">

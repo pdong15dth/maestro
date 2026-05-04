@@ -44,6 +44,12 @@ export function KimiStatusBar({ state }: KimiStatusBarProps) {
           </span>
         </div>
       )}
+
+      {state.error && (
+        <div className="text-[10px] text-rose-400 truncate max-w-[200px]" title={state.error}>
+          {state.error}
+        </div>
+      )}
     </div>
   );
 }

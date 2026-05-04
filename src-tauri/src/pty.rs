@@ -80,6 +80,8 @@ impl PtyManager {
         let mut cmd = CommandBuilder::new(&command);
         cmd.args(args);
         cmd.cwd(cwd);
+        cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("PYTHONUTF8", "1");
 
         let child = pair
             .slave
@@ -163,6 +165,8 @@ impl PtyManager {
         cmd.current_dir(&cwd);
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
+        cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("PYTHONUTF8", "1");
 
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
         let pid = child.id();

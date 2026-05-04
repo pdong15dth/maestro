@@ -18,8 +18,9 @@ import { ToolCallCard } from '@/components/ToolCallCard';
 import { ApprovalPrompt } from '@/components/ApprovalPrompt';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { ansiToHtml } from '@/lib/ansi';
+import { ansiToHtml, containsAnsi, normalizePtyText } from '@/lib/ansi';
 import { formatAgentInput, detectPlatform } from '@/lib/agent-platforms';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 import { invoke } from '@tauri-apps/api/core';
 
 interface Problem {
@@ -29,30 +30,42 @@ interface Problem {
   severity: string;
 }
 
-function AgentMessageRaw({ content, role, isStreaming }: { content: string; role: 'user' | 'agent' | 'system'; isStreaming?: boolean }) {
-  // Agent messages: render via ansiToHtml for colored text only (no markdown parsing)
-  if (role === 'agent') {
+function AgentMessageRaw({ content, role, isStreaming, thinking }: { content: string; role: 'user' | 'agent' | 'system'; isStreaming?: boolean; thinking?: string }) {
+  // System messages: keep ANSI rendering for status / error colors
+  if (role === 'system') {
     const html = ansiToHtml(content);
-    const cursorHtml = isStreaming
-      ? '<span class="inline-block w-2 h-4 bg-[#A3E635] ml-0.5 animate-[blink_1s_step-end_infinite] align-middle"></span>'
-      : '';
     return (
       <div
-        className="text-sm whitespace-pre-wrap leading-relaxed text-[#FAFAFA]"
-        dangerouslySetInnerHTML={{ __html: html + cursorHtml }}
+        className="text-sm whitespace-pre-wrap leading-relaxed text-zinc-500 italic"
+        dangerouslySetInnerHTML={{ __html: html }}
       />
     );
   }
-  // User / system messages
-  const html = role === 'user' ? content : ansiToHtml(content);
+
+  // User and agent messages: render as markdown with syntax highlighting,
+  // but fall back to ANSI rendering if the content contains escape codes.
+  const hasAnsi = containsAnsi(content);
+
+  // While streaming, avoid expensive Markdown re-parses on every chunk.
+  // Render plain text (or ANSI HTML) in real time; switch to Markdown once complete.
   return (
-    <div
-      className={cn(
-        "text-sm whitespace-pre-wrap leading-relaxed",
-        role === 'user' ? "text-[#A3E635]" : "text-zinc-500 italic"
+    <div className="text-sm leading-relaxed space-y-2">
+      {thinking && (
+        <div className="text-zinc-500 italic whitespace-pre-wrap border-l-2 border-zinc-700 pl-3">
+          {thinking}
+        </div>
       )}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+      {hasAnsi ? (
+        <div className="text-[#FAFAFA] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: ansiToHtml(content) }} />
+      ) : isStreaming ? (
+        <div className="text-[#FAFAFA] whitespace-pre-wrap">{content}</div>
+      ) : (
+        <MarkdownRenderer content={content} />
+      )}
+      {isStreaming && (
+        <span className="inline-block w-2 h-4 bg-[#A3E635] ml-0.5 animate-[blink_1s_step-end_infinite] align-middle" />
+      )}
+    </div>
   );
 }
 
@@ -60,17 +73,30 @@ const AgentMessage = React.memo(AgentMessageRaw);
 
 const AGENT_SESSION_ID = 'agent';
 
-function cleanKimiOutput(chunk: string): string {
-  return chunk
-    .split('\n')
-    .filter(line => {
-      const t = line.trim();
-      if (t.startsWith('To resume this session')) return false;
-      if (t.startsWith('Run:')) return false;
-      if (t === '') return false;
-      return true;
-    })
-    .join('\n');
+function extractTextFromKimiStreamObject(obj: any): string {
+  if (!obj || typeof obj !== 'object') return '';
+  if (typeof obj.text === 'string') return obj.text;
+  if (obj.content && typeof obj.content === 'object') {
+    if (typeof obj.content.text === 'string') return obj.content.text;
+    if (Array.isArray(obj.content)) {
+      return obj.content
+        .map((part: any) => {
+          if (typeof part === 'string') return part;
+          if (part && typeof part.text === 'string') return part.text;
+          if (part && part.type === 'text' && typeof part.text === 'string') return part.text;
+          return '';
+        })
+        .join('');
+    }
+  }
+  if (obj.delta && typeof obj.delta.text === 'string') return obj.delta.text;
+  if (obj.choices && Array.isArray(obj.choices) && obj.choices[0]?.delta?.content) {
+    return String(obj.choices[0].delta.content);
+  }
+  if (obj.type === 'content_part' && obj.content) {
+    return extractTextFromKimiStreamObject({ content: obj.content });
+  }
+  return '';
 }
 
 export default function Page() {
@@ -135,8 +161,47 @@ export default function Page() {
       if (syncIntervalRef.current !== null) {
         clearInterval(syncIntervalRef.current);
       }
+      if (kimiFlushTimerRef.current !== null) {
+        clearTimeout(kimiFlushTimerRef.current);
+      }
+      if (agentFlushTimerRef.current !== null) {
+        clearTimeout(agentFlushTimerRef.current);
+      }
     };
   }, []);
+
+  const kimiBufferRef = useRef('');
+  const kimiTextBufferRef = useRef('');
+  const kimiFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const agentTextBufferRef = useRef('');
+  const agentFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushKimiTextBuffer = useCallback(() => {
+    const text = kimiTextBufferRef.current;
+    if (!text) return;
+    kimiTextBufferRef.current = '';
+    setAgentMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === 'agent') {
+        return [...prev.slice(0, -1), { ...last, content: last.content + text }];
+      }
+      return [...prev, { role: 'agent', content: text }];
+    });
+  }, [setAgentMessages]);
+
+  const flushAgentTextBuffer = useCallback(() => {
+    const text = agentTextBufferRef.current;
+    if (!text) return;
+    agentTextBufferRef.current = '';
+    setAgentMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === 'agent') {
+        return [...prev.slice(0, -1), { ...last, content: last.content + text }];
+      }
+      return [...prev, { role: 'agent', content: text }];
+    });
+  }, [setAgentMessages]);
 
   const handleOutput = useCallback((sessionId: string, chunk: string) => {
     if (sessionId === AGENT_SESSION_ID) {
@@ -144,19 +209,102 @@ export default function Page() {
       const platform = agent?.platform || detectPlatform(agent?.command || '');
       const isKimiCode = platform === 'kimi-code';
 
-      let text = chunk;
       if (isKimiCode) {
-        text = cleanKimiOutput(chunk);
+        if (chunk.includes('[Process exited]')) {
+          // Flush pending batched text first
+          if (kimiFlushTimerRef.current !== null) {
+            clearTimeout(kimiFlushTimerRef.current);
+            kimiFlushTimerRef.current = null;
+          }
+          flushKimiTextBuffer();
+          // Flush any remaining buffered text (strip ANSI in case PTY emitted any)
+          const remaining = normalizePtyText(kimiBufferRef.current);
+          kimiBufferRef.current = '';
+          let extracted = '';
+          if (remaining.trim()) {
+            // Try NDJSON lines first
+            const lines = remaining.split('\n').filter(l => l.trim());
+            for (const line of lines) {
+              try {
+                const obj = JSON.parse(line.trim());
+                extracted += extractTextFromKimiStreamObject(obj);
+              } catch {
+                // ignore invalid lines
+              }
+            }
+            // Fallback: single JSON object
+            if (!extracted) {
+              const jsonStart = remaining.indexOf('{');
+              const jsonEnd = remaining.lastIndexOf('}');
+              if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+                try {
+                  const data = JSON.parse(remaining.slice(jsonStart, jsonEnd + 1));
+                  extracted = extractTextFromKimiStreamObject(data);
+                } catch {
+                  extracted = remaining;
+                }
+              } else {
+                extracted = remaining;
+              }
+            }
+          }
+          if (extracted) {
+            setAgentMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === 'agent') {
+                return [...prev.slice(0, -1), { ...last, content: last.content + extracted }];
+              }
+              return [...prev, { role: 'agent', content: extracted }];
+            });
+          }
+          return;
+        }
+
+        // Realtime incremental NDJSON parsing
+        // Normalize PTY text: strip ANSI codes and \r so JSON stays clean
+        kimiBufferRef.current += normalizePtyText(chunk);
+        let buffer = kimiBufferRef.current;
+        let newlineIndex = buffer.indexOf('\n');
+
+        while (newlineIndex !== -1) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          newlineIndex = buffer.indexOf('\n');
+
+          if (!line) continue;
+
+          try {
+            const obj = JSON.parse(line);
+            const text = extractTextFromKimiStreamObject(obj);
+            if (text) {
+              kimiTextBufferRef.current += text;
+              if (kimiFlushTimerRef.current === null) {
+                kimiFlushTimerRef.current = setTimeout(() => {
+                  kimiFlushTimerRef.current = null;
+                  flushKimiTextBuffer();
+                }, 30);
+              }
+            }
+          } catch {
+            // Not valid JSON yet — could be a partial line of plain text.
+            // We drop it here because NDJSON lines should be complete.
+            // If the platform emits plain text mixed with NDJSON, the fallback
+            // on [Process exited] will catch it.
+          }
+        }
+
+        kimiBufferRef.current = buffer;
+        return;
       }
 
-      if (text) {
-        setAgentMessages(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === 'agent') {
-            return [...prev.slice(0, -1), { ...last, content: last.content + text }];
-          }
-          return [...prev, { role: 'agent', content: text }];
-        });
+      if (chunk) {
+        agentTextBufferRef.current += chunk;
+        if (agentFlushTimerRef.current === null) {
+          agentFlushTimerRef.current = setTimeout(() => {
+            agentFlushTimerRef.current = null;
+            flushAgentTextBuffer();
+          }, 30);
+        }
       }
 
       setLogs(prev => {
@@ -177,18 +325,22 @@ export default function Page() {
     }
   }, [agents, activeAgentId]);
 
-  const { spawn, runTask, spawnShell, send, kill, killAll, isRunning } = useAgentProcess(handleOutput);
+  const { spawn, spawnShell, send, kill, killAll, isRunning } = useAgentProcess(handleOutput);
 
   // Kimi Wire integration
   const selectedAgent = agents.find(a => a.id === activeAgentId);
-  const isKimiActive = selectedAgent?.platform === 'kimi-code' || detectPlatform(selectedAgent?.command || '') === 'kimi-code';
-  console.log('[debug] activeAgentId:', activeAgentId, 'isKimiActive:', isKimiActive, 'platform:', selectedAgent?.platform);
+  // Temporarily disable Kimi Wire mode; kimi --wire is single-shot and not compatible
+  // with the daemon-style PTY architecture. Fall back to PTY interactive mode.
+  // Kimi Wire mode disabled; using --print fallback instead.
+  const isKimiActive = selectedAgent?.platform === 'kimi-code';
 
   // Streaming text accumulates in a ref and is synced to React state periodically
   // to avoid re-rendering on every single chunk (which causes jerky text).
   const textBufferRef = useRef('');
+  const thinkBufferRef = useRef('');
   const isStreamingRef = useRef(false);
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const thinkSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const flushTextBuffer = useCallback(() => {
     const buffered = textBufferRef.current;
@@ -202,27 +354,46 @@ export default function Page() {
     });
   }, []);
 
+  const flushThinkBuffer = useCallback(() => {
+    const buffered = thinkBufferRef.current;
+    if (!buffered) return;
+    setAgentMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === 'agent') {
+        return [...prev.slice(0, -1), { ...last, thinking: buffered }];
+      }
+      return prev;
+    });
+  }, []);
+
   const kimiWire = useKimiWire(
     AGENT_SESSION_ID,
     // onTurnBegin
     useCallback((input: string) => {
       isStreamingRef.current = true;
       textBufferRef.current = '';
+      thinkBufferRef.current = '';
       if (syncIntervalRef.current !== null) {
         clearInterval(syncIntervalRef.current);
       }
+      if (thinkSyncIntervalRef.current !== null) {
+        clearInterval(thinkSyncIntervalRef.current);
+      }
       syncIntervalRef.current = setInterval(() => {
         flushTextBuffer();
-      }, 100);
-      setAgentMessages(prev => [...prev, { role: 'agent', content: '' }]);
-    }, [flushTextBuffer]),
+      }, 30);
+      thinkSyncIntervalRef.current = setInterval(() => {
+        flushThinkBuffer();
+      }, 30);
+      setAgentMessages(prev => [...prev, { role: 'agent', content: '', thinking: '' }]);
+    }, [flushTextBuffer, flushThinkBuffer]),
     // onTextChunk
     useCallback((text: string) => {
       textBufferRef.current += text;
     }, []),
     // onThinkChunk
     useCallback((text: string) => {
-      textBufferRef.current += text;
+      thinkBufferRef.current += text;
     }, []),
     // onTurnEnd
     useCallback(() => {
@@ -231,12 +402,18 @@ export default function Page() {
         clearInterval(syncIntervalRef.current);
         syncIntervalRef.current = null;
       }
+      if (thinkSyncIntervalRef.current !== null) {
+        clearInterval(thinkSyncIntervalRef.current);
+        thinkSyncIntervalRef.current = null;
+      }
       const finalContent = textBufferRef.current;
+      const finalThinking = thinkBufferRef.current;
       textBufferRef.current = '';
+      thinkBufferRef.current = '';
       setAgentMessages(prev => {
         const last = prev[prev.length - 1];
         if (last && last.role === 'agent') {
-          return [...prev.slice(0, -1), { ...last, content: finalContent }];
+          return [...prev.slice(0, -1), { ...last, content: finalContent, thinking: finalThinking }];
         }
         return prev;
       });
@@ -253,6 +430,21 @@ export default function Page() {
 
   const isKimiRunning = isKimiActive && (kimiWire.state.status !== 'idle');
   const agentIsRunning = isRunning || isKimiRunning;
+
+  // Show Kimi Wire errors in chat
+  useEffect(() => {
+    const err = kimiWire.state.error;
+    if (err) {
+      setAgentMessages(prev => {
+        // Avoid duplicating the same error message
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'system' && last.content.includes(err)) {
+          return prev;
+        }
+        return [...prev, { role: 'system', content: `Kimi Wire error: ${err}` }];
+      });
+    }
+  }, [kimiWire.state.error, setAgentMessages]);
 
   // Auto-kill agent session when swapping to a different agent
   useEffect(() => {
@@ -361,29 +553,33 @@ export default function Page() {
     setAgentMessages(prev => [...prev, { role: 'user', content: rawInput }]);
 
     if (platform === 'kimi-code') {
-      console.log('[debug] kimi submit, isReady:', kimiWire.state.isReady, 'isReadyRef:', kimiWire.isReadyRef.current);
-      try {
-        if (!kimiWire.state.isReady && currentWorkspace) {
-          await kimiWire.initWire(AGENT_SESSION_ID, currentWorkspace);
-          // Wait for initialize handshake (poll ref to avoid stale closure)
-          await new Promise<void>((resolve) => {
-            const check = setInterval(() => {
-              if (kimiWire.isReadyRef.current) {
-                clearInterval(check);
-                resolve();
-              }
-            }, 100);
-            setTimeout(() => { clearInterval(check); resolve(); }, 3000);
-          });
-        }
-        if (kimiWire.isReadyRef.current && agent) {
+      if (agent && currentWorkspace) {
+        try {
+          // Use Kimi Wire mode for true streaming via JSON-RPC over PTY
+          // Only init once; reuse the existing wire session for subsequent turns
+          if (!kimiWire.isReadyRef.current) {
+            await kimiWire.initWire(AGENT_SESSION_ID, currentWorkspace);
+            // Wait for the wire daemon to handshake (up to 5s)
+            let waited = 0;
+            while (!kimiWire.isReadyRef.current && waited < 5000) {
+              await new Promise(r => setTimeout(r, 100));
+              waited += 100;
+            }
+            if (!kimiWire.isReadyRef.current) {
+              setAgentMessages(prev => [...prev, { role: 'system', content: 'Kimi Wire failed to initialize within 5 seconds.' }]);
+              return;
+            }
+          }
+          // Prevent sending while a turn is already in progress
+          if (kimiWire.state.status !== 'idle') {
+            setAgentMessages(prev => [...prev, { role: 'system', content: 'Agent is still responding. Please wait for the current turn to finish.' }]);
+            return;
+          }
           await kimiWire.sendPrompt(AGENT_SESSION_ID, input);
           lastSpawnedAgentRef.current = agent.id;
-        } else {
-          setAgentMessages(prev => [...prev, { role: 'system', content: 'Kimi Wire failed to initialize.' }]);
+        } catch (err) {
+          setAgentMessages(prev => [...prev, { role: 'system', content: `Failed to run Kimi: ${err}` }]);
         }
-      } catch (err) {
-        setAgentMessages(prev => [...prev, { role: 'system', content: `Failed to start Kimi Wire: ${err}` }]);
       }
       return;
     }
@@ -418,16 +614,24 @@ export default function Page() {
     try {
       // Flush any pending text before stopping so the user sees the complete output
       const finalContent = textBufferRef.current;
+      const finalThinking = thinkBufferRef.current;
       textBufferRef.current = '';
-      if (finalContent) {
+      thinkBufferRef.current = '';
+      if (finalContent || finalThinking) {
         setAgentMessages(prev => {
           const last = prev[prev.length - 1];
           if (last && last.role === 'agent') {
-            return [...prev.slice(0, -1), { ...last, content: finalContent }];
+            return [...prev.slice(0, -1), { ...last, content: finalContent, thinking: finalThinking }];
           }
           return prev;
         });
       }
+      // Also flush the non-Kimi agent buffer if present
+      if (agentFlushTimerRef.current !== null) {
+        clearTimeout(agentFlushTimerRef.current);
+        agentFlushTimerRef.current = null;
+      }
+      flushAgentTextBuffer();
       if (isKimiActive) {
         await kimiWire.killWire(AGENT_SESSION_ID);
       } else {
@@ -866,7 +1070,7 @@ export default function Page() {
                     const inner = (
                       <>
                         {label}
-                        <AgentMessage content={msg.content} role={msg.role} isStreaming={isStreaming} />
+                        <AgentMessage content={msg.content} role={msg.role} isStreaming={isStreaming} thinking={msg.thinking} />
                         {isKimiActive && msg.role === 'agent' && isLast && (
                           <>
                             <ToolCallCard tools={kimiWire.state.toolCalls} />

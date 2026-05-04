@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocol_version":"1","client":{"name":"maestro","version":"0.1.0"},"capabilities":{"supports_question":true}}}
+{"jsonrpc":"2.0","id":"prompt","method":"prompt","params":{"user_input":"hi"}}

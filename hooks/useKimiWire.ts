@@ -123,6 +123,7 @@ export function useKimiWire(
             ...prev,
             status: 'thinking',
             toolCalls: [],
+            error: null,
           }));
           onTurnBegin?.(input);
           break;

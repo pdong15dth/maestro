@@ -306,14 +306,31 @@ async fn check_problems(cwd: String) -> Result<Vec<Problem>, String> {
 // --- Agent & Skill Discovery ---
 
 fn which_cmd(cmd: &str) -> Option<String> {
-    let output = std::process::Command::new("which")
+    #[cfg(target_os = "windows")]
+    let program = "where";
+    #[cfg(not(target_os = "windows"))]
+    let program = "which";
+
+    let output = std::process::Command::new(program)
         .arg(cmd)
         .output()
         .ok()?;
     if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !path.is_empty() {
-            return Some(path);
+        let paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        // Prefer .exe, then .cmd/.bat, then fallback to first result
+        let preferred = paths
+            .iter()
+            .find(|p| p.ends_with(".exe"))
+            .or_else(|| paths.iter().find(|p| p.ends_with(".cmd") || p.ends_with(".bat")))
+            .or_else(|| paths.first());
+
+        if let Some(path) = preferred {
+            return Some(path.clone());
         }
     }
     None
@@ -343,11 +360,11 @@ async fn detect_agents() -> Result<Vec<DetectedAgent>, String> {
 
     let mut agents = Vec::new();
     for (cmd, name, platform) in candidates {
-        if which_cmd(cmd).is_some() {
-            let version = get_version(cmd).await;
+        if let Some(path) = which_cmd(cmd) {
+            let version = get_version(&path).await;
             agents.push(DetectedAgent {
                 name: name.to_string(),
-                command: cmd.to_string(),
+                command: path,
                 version,
                 platform: platform.to_string(),
             });
