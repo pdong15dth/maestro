@@ -55,6 +55,7 @@ export interface ChatMessage {
   role: 'user' | 'agent' | 'system';
   content: string;
   thinking?: string;
+  toolCalls?: { id: string; name: string; arguments?: string; result?: string }[];
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);

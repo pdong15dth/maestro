@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ansiToHtml, containsAnsi, normalizePtyText } from '@/lib/ansi';
 import { formatAgentInput, detectPlatform } from '@/lib/agent-platforms';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
+import { StreamingMarkdownRenderer } from '@/components/StreamingMarkdownRenderer';
 import { invoke } from '@tauri-apps/api/core';
 
 interface Problem {
@@ -46,8 +47,6 @@ function AgentMessageRaw({ content, role, isStreaming, thinking }: { content: st
   // but fall back to ANSI rendering if the content contains escape codes.
   const hasAnsi = containsAnsi(content);
 
-  // While streaming, avoid expensive Markdown re-parses on every chunk.
-  // Render plain text (or ANSI HTML) in real time; switch to Markdown once complete.
   return (
     <div className="text-sm leading-relaxed space-y-2">
       {thinking && (
@@ -57,8 +56,6 @@ function AgentMessageRaw({ content, role, isStreaming, thinking }: { content: st
       )}
       {hasAnsi ? (
         <div className="text-[#FAFAFA] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: ansiToHtml(content) }} />
-      ) : isStreaming ? (
-        <div className="text-[#FAFAFA] whitespace-pre-wrap">{content}</div>
       ) : (
         <MarkdownRenderer content={content} />
       )}
@@ -345,10 +342,15 @@ export default function Page() {
   const flushTextBuffer = useCallback(() => {
     const buffered = textBufferRef.current;
     if (!buffered) return;
+    console.log('[KW-APPROVAL] flushTextBuffer len=', buffered.length);
     setAgentMessages(prev => {
       const last = prev[prev.length - 1];
       if (last && last.role === 'agent') {
-        return [...prev.slice(0, -1), { ...last, content: buffered }];
+        // After TurnEnd the buffer is cleared, so new text should append to existing content
+        const newContent = last.content && !buffered.startsWith(last.content)
+          ? last.content + buffered
+          : buffered;
+        return [...prev.slice(0, -1), { ...last, content: newContent }];
       }
       return prev;
     });
@@ -357,10 +359,15 @@ export default function Page() {
   const flushThinkBuffer = useCallback(() => {
     const buffered = thinkBufferRef.current;
     if (!buffered) return;
+    console.log('[KW-APPROVAL] flushThinkBuffer len=', buffered.length);
     setAgentMessages(prev => {
       const last = prev[prev.length - 1];
       if (last && last.role === 'agent') {
-        return [...prev.slice(0, -1), { ...last, thinking: buffered }];
+        // After TurnEnd the buffer is cleared, so new thinking should append to existing
+        const newThinking = last.thinking && !buffered.startsWith(last.thinking)
+          ? last.thinking + buffered
+          : buffered;
+        return [...prev.slice(0, -1), { ...last, thinking: newThinking }];
       }
       return prev;
     });
@@ -390,13 +397,28 @@ export default function Page() {
     // onTextChunk
     useCallback((text: string) => {
       textBufferRef.current += text;
-    }, []),
+      console.log('[KW-APPROVAL] onTextChunk text len=', text.length, 'total=', textBufferRef.current.length);
+      // If the sync interval was stopped (e.g. after TurnEnd), restart it so
+      // late-arriving text still gets flushed into React state.
+      if (syncIntervalRef.current === null) {
+        syncIntervalRef.current = setInterval(() => {
+          flushTextBuffer();
+        }, 30);
+      }
+    }, [flushTextBuffer]),
     // onThinkChunk
     useCallback((text: string) => {
       thinkBufferRef.current += text;
-    }, []),
+      console.log('[KW-APPROVAL] onThinkChunk text len=', text.length, 'total=', thinkBufferRef.current.length);
+      if (thinkSyncIntervalRef.current === null) {
+        thinkSyncIntervalRef.current = setInterval(() => {
+          flushThinkBuffer();
+        }, 30);
+      }
+    }, [flushThinkBuffer]),
     // onTurnEnd
     useCallback(() => {
+      console.log('[KW-APPROVAL] onTurnEnd flushing final content');
       isStreamingRef.current = false;
       if (syncIntervalRef.current !== null) {
         clearInterval(syncIntervalRef.current);
@@ -413,6 +435,7 @@ export default function Page() {
       setAgentMessages(prev => {
         const last = prev[prev.length - 1];
         if (last && last.role === 'agent') {
+          // Merge any live tool calls from wire state into the persisted message
           return [...prev.slice(0, -1), { ...last, content: finalContent, thinking: finalThinking }];
         }
         return prev;
@@ -421,6 +444,16 @@ export default function Page() {
     // onToolCall
     useCallback((tool: { id: string; name: string; arguments?: string; result?: string }) => {
       console.log('[Kimi Tool]', tool);
+      // Append tool call to the current agent message so it persists in history
+      setAgentMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'agent') {
+          const existing = last.toolCalls || [];
+          if (existing.some(t => t.id === tool.id)) return prev; // avoid dup
+          return [...prev.slice(0, -1), { ...last, toolCalls: [...existing, tool] }];
+        }
+        return prev;
+      });
     }, []),
     // onApprovalRequest
     useCallback((approval: { requestId: string; kind: string; title?: string; description?: string }) => {
@@ -1071,13 +1104,34 @@ export default function Page() {
                       <>
                         {label}
                         <AgentMessage content={msg.content} role={msg.role} isStreaming={isStreaming} thinking={msg.thinking} />
+                        {msg.role === 'agent' && (msg.toolCalls || []).length > 0 && (
+                          <ToolCallCard tools={msg.toolCalls!} />
+                        )}
                         {isKimiActive && msg.role === 'agent' && isLast && (
                           <>
-                            <ToolCallCard tools={kimiWire.state.toolCalls} />
+                            {kimiWire.state.toolCalls.length > 0 && (
+                              <ToolCallCard tools={kimiWire.state.toolCalls} />
+                            )}
                             <ApprovalPrompt
                               approvals={kimiWire.state.pendingApprovals}
-                              onApprove={(id) => kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'approve' })}
-                              onReject={(id) => kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'reject' })}
+                              onApprove={async (id) => {
+                                try {
+                                  await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'approve' });
+                                  console.log('[Approval] approved', id);
+                                } catch (err) {
+                                  console.error('[Approval] approve failed', err);
+                                  setAgentMessages(prev => [...prev, { role: 'system', content: `Approval failed: ${err}` }]);
+                                }
+                              }}
+                              onReject={async (id) => {
+                                try {
+                                  await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'reject' });
+                                  console.log('[Approval] rejected', id);
+                                } catch (err) {
+                                  console.error('[Approval] reject failed', err);
+                                  setAgentMessages(prev => [...prev, { role: 'system', content: `Rejection failed: ${err}` }]);
+                                }
+                              }}
                             />
                           </>
                         )}

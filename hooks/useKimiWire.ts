@@ -28,6 +28,7 @@ export interface KimiApproval {
   kind: string;
   title?: string;
   description?: string;
+  toolName?: string;
 }
 
 export interface KimiWireState {
@@ -109,12 +110,9 @@ export function useKimiWire(
       else unlisten();
     }).catch(() => {});
 
-    listen<WireEventPayload>('kimi-wire-event', (event) => {
-      console.log('[useKimiWire] kimi-wire-event', event.payload);
-      if (cancelled || event.payload.session_id !== sessionId) return;
-      const { event_type, payload } = event.payload;
-
-      switch (event_type) {
+    // Helper to process any event payload (used for both top-level and SubagentEvent unwrap)
+    const processEvent = (eventType: string, payload: unknown) => {
+      switch (eventType) {
         case 'TurnBegin': {
           const input = (payload as Record<string, unknown>)?.user_input as string || '';
           currentMessageRef.current = '';
@@ -148,6 +146,7 @@ export function useKimiWire(
         case 'ContentPart': {
           const p = payload as Record<string, unknown>;
           const partType = (p.type as string) || '';
+          console.log('[KW-APPROVAL] ContentPart type=', partType);
           if (partType === 'text') {
             const text = (p.text as string) || '';
             currentMessageRef.current += text;
@@ -163,6 +162,7 @@ export function useKimiWire(
         case 'TextPart': {
           const p = payload as Record<string, unknown>;
           const text = (p.text as string) || '';
+          console.log('[KW-APPROVAL] TextPart text len=', text.length);
           currentMessageRef.current += text;
           setState((prev) => prev.status === 'streaming' ? prev : { ...prev, status: 'streaming' });
           onTextChunk?.(text);
@@ -178,12 +178,22 @@ export function useKimiWire(
         }
         case 'ToolCall': {
           const p = payload as Record<string, unknown>;
+          console.log('[KW-APPROVAL] ToolCall raw payload=', JSON.stringify(p));
+          const funcObj = (p as Record<string, unknown>).function as Record<string, unknown> | undefined;
+          const toolId = (p.id as string) || (p.toolCallId as string) || (p.tool_id as string) || '';
+          const toolName = (p.name as string) || (p.tool_name as string) || (funcObj?.name as string) || '';
+          let toolArgs: string | undefined;
+          const rawArgs = p.arguments ?? (funcObj?.arguments as string) ?? p.args ?? p.input ?? undefined;
+          if (rawArgs !== undefined) {
+            toolArgs = typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs);
+          }
           const tool: KimiToolCall = {
-            id: (p.id as string) || '',
-            name: (p.name as string) || '',
-            arguments: (p.arguments as string) || undefined,
+            id: toolId,
+            name: toolName,
+            arguments: toolArgs,
             result: (p.result as string) || undefined,
           };
+          console.log('[KW-APPROVAL] ToolCall resolved id=', tool.id, 'name=', tool.name);
           setState((prev) => ({
             ...prev,
             status: 'tool_call',
@@ -193,16 +203,33 @@ export function useKimiWire(
           break;
         }
         case 'ToolResult': {
-          // Update last tool call with result if matched
           const p = payload as Record<string, unknown>;
-          const toolId = (p.id as string) || '';
-          const result = (p.result as string) || '';
-          setState((prev) => ({
-            ...prev,
-            toolCalls: prev.toolCalls.map((t) =>
-              t.id === toolId ? { ...t, result } : t
-            ),
-          }));
+          // Kimi CLI uses tool_call_id (snake_case) and return_value.output
+          const toolId = (p.tool_call_id as string) || (p.id as string) || (p.toolCallId as string) || '';
+          const returnValue = p.return_value as Record<string, unknown> | undefined;
+          let result = '';
+          if (returnValue && returnValue.output !== undefined) {
+            result = typeof returnValue.output === 'string' ? returnValue.output : JSON.stringify(returnValue.output);
+          } else {
+            const rawResult = p.result;
+            result = rawResult !== undefined
+              ? (typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult))
+              : '';
+          }
+          console.log('[KW-APPROVAL] ToolResult raw payload=', JSON.stringify(p));
+          console.log('[KW-APPROVAL] ToolResult resolved id=', toolId, 'result len=', result.length);
+          setState((prev) => {
+            const hasMatch = prev.toolCalls.some((t) => t.id === toolId);
+            if (!hasMatch) {
+              console.warn('[KW-APPROVAL] ToolResult id not found in toolCalls:', toolId, 'available ids=', prev.toolCalls.map(t => t.id));
+            }
+            return {
+              ...prev,
+              toolCalls: prev.toolCalls.map((t) =>
+                t.id === toolId ? { ...t, result } : t
+              ),
+            };
+          });
           break;
         }
         case 'TurnEnd':
@@ -214,7 +241,6 @@ export function useKimiWire(
         case 'Notification': {
           const p = payload as Record<string, unknown>;
           const text = (p.message as string) || '';
-          // Append notification to current message
           currentMessageRef.current += '\n' + text;
           onTextChunk?.('\n' + text);
           break;
@@ -231,6 +257,26 @@ export function useKimiWire(
           // Ignore unknown events silently
           break;
       }
+    };
+
+    listen<WireEventPayload>('kimi-wire-event', (event) => {
+      console.log('[useKimiWire] kimi-wire-event', event.payload);
+      if (cancelled || event.payload.session_id !== sessionId) return;
+      const { event_type, payload } = event.payload;
+
+      if (event_type === 'SubagentEvent') {
+        // Unwrap nested event from SubagentEvent payload
+        const p = payload as Record<string, unknown>;
+        const nestedEvent = p.event as Record<string, unknown> | undefined;
+        if (nestedEvent) {
+          const nestedType = (nestedEvent.type as string) || '';
+          const nestedPayload = nestedEvent.payload;
+          console.log('[KW-APPROVAL] SubagentEvent unwrap type=', nestedType);
+          processEvent(nestedType, nestedPayload);
+        }
+      } else {
+        processEvent(event_type, payload);
+      }
     }).then((unlisten) => {
       if (!cancelled) unlistenEventRef.current = unlisten;
       else unlisten();
@@ -242,11 +288,13 @@ export function useKimiWire(
 
       if (request_type === 'ApprovalRequest') {
         const p = payload as Record<string, unknown>;
+        console.log('[KW-APPROVAL] ApprovalRequest request_id=', request_id, 'payload=', JSON.stringify(p));
         const approval: KimiApproval = {
           requestId: request_id,
           kind: (p.kind as string) || 'action',
           title: (p.title as string) || undefined,
           description: (p.description as string) || undefined,
+          toolName: (p.toolName as string) || (p.tool as string) || (p.tool_name as string) || undefined,
         };
         setState((prev) => ({
           ...prev,

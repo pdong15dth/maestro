@@ -23,12 +23,14 @@ export function ApprovalPrompt({ approvals, onApprove, onReject }: ApprovalPromp
             <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-amber-300">
-                {approval.title || 'Action requires approval'}
+                {approval.toolName ? `${approval.toolName} requires approval` : (approval.title || 'Action requires approval')}
               </div>
               {approval.description && (
                 <div className="text-[11px] text-zinc-400 mt-1">{approval.description}</div>
               )}
-              <div className="text-[10px] text-zinc-500 mt-1 capitalize">Type: {approval.kind}</div>
+              <div className="text-[10px] text-zinc-500 mt-1 capitalize">
+                Type: {approval.kind}{approval.toolName ? ` • Tool: ${approval.toolName}` : ''}
+              </div>
             </div>
           </div>
           <div className="flex gap-2 mt-3">

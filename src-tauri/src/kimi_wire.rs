@@ -140,8 +140,6 @@ struct JsonRpcMessage {
 pub struct KimiWireSession {
     pub child: Arc<Mutex<Child>>,
     pub writer: Arc<Mutex<ChildStdin>>,
-    pub session_id: String,
-    pub initialized: bool,
 }
 
 pub struct KimiWireManager {
@@ -269,8 +267,6 @@ impl KimiWireManager {
         sessions.insert(session_id.clone(), KimiWireSession {
             child: child_arc,
             writer: writer_arc,
-            session_id: session_id.clone(),
-            initialized: false,
         });
 
         Ok(())
@@ -343,6 +339,7 @@ impl KimiWireManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn kill_all(&self) -> Result<(), String> {
         let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
         for (_, session) in sessions.drain() {
@@ -396,15 +393,15 @@ fn strip_ansi_sequences(input: &str) -> String {
 
 fn handle_stdout_line(app: &AppHandle, session_id: &str, line: &str) {
     let cleaned = strip_ansi_sequences(line);
-    eprintln!("[kimi-wire] handle_stdout_line called, cleaned={}", &cleaned);
+    eprintln!("[KW-APPROVAL] handle_stdout_line cleaned={}", &cleaned);
     let parse_result: Result<JsonRpcMessage, _> = serde_json::from_str(&cleaned);
     let msg = match parse_result {
         Ok(m) => {
-            eprintln!("[kimi-wire] parsed ok, method={:?} id={:?}", m.method, m.id);
+            eprintln!("[KW-APPROVAL] parsed ok method={:?} id={:?}", m.method, m.id);
             m
         }
         Err(e) => {
-            eprintln!("[kimi-wire] parse error: {:?}", e);
+            eprintln!("[KW-APPROVAL] parse error: {:?}", e);
             // Not JSON-RPC — might be a plain line like "To resume this session..."
             // Emit as a generic event so frontend can filter if needed.
             let _ = app.emit("kimi-wire-event", WireEventPayload {
@@ -426,14 +423,14 @@ fn handle_stdout_line(app: &AppHandle, session_id: &str, line: &str) {
 
         // Internal: initialize response
         if id == "init" {
-            eprintln!("[kimi-wire] emitting kimi-wire-ready for session {}", session_id);
+            eprintln!("[KW-APPROVAL] emitting kimi-wire-ready for session {}", session_id);
             let payload = WireReadyPayload {
                 session_id: session_id.to_string(),
             };
             if let Err(e) = app.emit("kimi-wire-ready", &payload) {
-                eprintln!("[kimi-wire] emit error: {:?}", e);
+                eprintln!("[KW-APPROVAL] emit error: {:?}", e);
             } else {
-                eprintln!("[kimi-wire] emit succeeded");
+                eprintln!("[KW-APPROVAL] emit succeeded");
             }
             return;
         }
@@ -451,6 +448,7 @@ fn handle_stdout_line(app: &AppHandle, session_id: &str, line: &str) {
     if msg.method.as_deref() == Some("event") {
         if let Some(params) = msg.params {
             if let Some(event_type) = params.get("type").and_then(|v| v.as_str()) {
+                eprintln!("[KW-APPROVAL] emitting event type={} for session {}", event_type, session_id);
                 let payload = params.get("payload").cloned().unwrap_or(Value::Null);
                 let _ = app.emit("kimi-wire-event", WireEventPayload {
                     session_id: session_id.to_string(),
