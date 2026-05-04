@@ -3,6 +3,7 @@ use tauri::{Manager, Emitter};
 use serde::Serialize;
 
 mod pty;
+mod kimi_wire;
 
 #[derive(Serialize)]
 struct CommandOutput {
@@ -17,6 +18,23 @@ struct Problem {
     line: u32,
     message: String,
     severity: String,
+}
+
+#[derive(Serialize, Clone)]
+struct DetectedAgent {
+    name: String,
+    command: String,
+    version: String,
+    platform: String,
+}
+
+#[derive(Serialize, Clone)]
+struct ScannedSkill {
+    name: String,
+    description: String,
+    version: String,
+    source: String,
+    path: String,
 }
 
 #[tauri::command]
@@ -73,6 +91,18 @@ async fn check_cli(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn check_command(command: String) -> Result<bool, String> {
+    let output = tokio::process::Command::new(&command)
+        .arg("--version")
+        .output()
+        .await;
+    match output {
+        Ok(out) => Ok(out.status.success()),
+        Err(_) => Ok(false),
+    }
+}
+
+#[tauri::command]
 async fn exec_command(
     path: String,
     args: Vec<String>,
@@ -106,6 +136,18 @@ async fn git_branch(cwd: String) -> Result<String, String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
+}
+
+#[tauri::command]
+async fn run_agent_task(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<pty::PtyManager>>,
+    session_id: String,
+    command: String,
+    args: Vec<String>,
+    cwd: String,
+) -> Result<(), String> {
+    state.spawn_stream(app, session_id, command, args, cwd)
 }
 
 #[tauri::command]
@@ -261,24 +303,241 @@ async fn check_problems(cwd: String) -> Result<Vec<Problem>, String> {
     Ok(problems)
 }
 
+// --- Agent & Skill Discovery ---
+
+fn which_cmd(cmd: &str) -> Option<String> {
+    let output = std::process::Command::new("which")
+        .arg(cmd)
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+async fn get_version(cmd: &str) -> String {
+    let output = tokio::process::Command::new(cmd)
+        .arg("--version")
+        .output()
+        .await;
+    match output {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        }
+        _ => "unknown".to_string(),
+    }
+}
+
+#[tauri::command]
+async fn detect_agents() -> Result<Vec<DetectedAgent>, String> {
+    let candidates = vec![
+        ("claude", "Claude Code", "claude-code"),
+        ("kimi", "Kimi Code", "kimi-code"),
+        ("aider", "Aider", "aider"),
+        ("openai", "OpenAI CLI", "openai-cli"),
+    ];
+
+    let mut agents = Vec::new();
+    for (cmd, name, platform) in candidates {
+        if which_cmd(cmd).is_some() {
+            let version = get_version(cmd).await;
+            agents.push(DetectedAgent {
+                name: name.to_string(),
+                command: cmd.to_string(),
+                version,
+                platform: platform.to_string(),
+            });
+        }
+    }
+
+    Ok(agents)
+}
+
+fn parse_frontmatter(content: &str) -> Option<(String, String, String)> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut in_fm = false;
+    let mut name = None;
+    let mut desc = None;
+    let mut version = None;
+    let mut block_key: Option<&str> = None;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed == "---" {
+            if !in_fm {
+                in_fm = true;
+                continue;
+            } else {
+                break;
+            }
+        }
+        if !in_fm {
+            continue;
+        }
+
+        // If we are inside a multi-line block scalar
+        if let Some(key) = block_key {
+            if line.starts_with(' ') || line.starts_with('\t') {
+                let val = line.trim();
+                if key == "description" {
+                    let d = desc.get_or_insert_with(String::new);
+                    if !d.is_empty() {
+                        d.push(' ');
+                    }
+                    d.push_str(val);
+                }
+                continue;
+            } else {
+                block_key = None;
+                // fall through to parse current line as a new key
+            }
+        }
+
+        if let Some(pos) = trimmed.find(':') {
+            let key = &trimmed[..pos];
+            let rest = trimmed[pos + 1..].trim();
+            match key {
+                "name" => name = Some(rest.to_string()),
+                "version" => version = Some(rest.to_string()),
+                "description" => {
+                    if rest.is_empty() || rest == ">" || rest == ">-" || rest == "|" || rest == "|-" {
+                        block_key = Some("description");
+                        desc = Some(String::new());
+                    } else {
+                        desc = Some(rest.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some((name?, desc.unwrap_or_default(), version.unwrap_or_default()))
+}
+
+fn scan_skill_dir(dir: &std::path::Path, source: &str, skills: &mut Vec<ScannedSkill>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let skill_md = path.join("SKILL.md");
+        if !skill_md.exists() {
+            continue;
+        }
+        let content = std::fs::read_to_string(&skill_md).unwrap_or_default();
+        if let Some((name, description, version)) = parse_frontmatter(&content) {
+            skills.push(ScannedSkill {
+                name: if name.is_empty() {
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string()
+                } else {
+                    name
+                },
+                description,
+                version,
+                source: source.to_string(),
+                path: skill_md.to_string_lossy().to_string(),
+            });
+        }
+    }
+}
+
+#[tauri::command]
+async fn scan_skills(cwd: String) -> Result<Vec<ScannedSkill>, String> {
+    let mut skills = Vec::new();
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    if !home.is_empty() {
+        let home_path = std::path::Path::new(&home);
+        scan_skill_dir(&home_path.join(".claude/skills"), "user-claude", &mut skills);
+        scan_skill_dir(&home_path.join(".kimi/skills"), "user-kimi", &mut skills);
+    }
+
+    if !cwd.is_empty() {
+        let cwd_path = std::path::Path::new(&cwd);
+        scan_skill_dir(&cwd_path.join(".claude/skills"), "project-claude", &mut skills);
+        scan_skill_dir(&cwd_path.join(".kimi/skills"), "project-kimi", &mut skills);
+    }
+
+    // Deduplicate by (source, name) keeping first occurrence
+    let mut seen = std::collections::HashSet::new();
+    skills.retain(|s| seen.insert((s.source.clone(), s.name.clone())));
+
+    Ok(skills)
+}
+
+#[tauri::command]
+async fn init_kimi_wire(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<kimi_wire::KimiWireManager>>,
+    session_id: String,
+    cwd: String,
+) -> Result<(), String> {
+    state.init(app, session_id, cwd)
+}
+
+#[tauri::command]
+fn send_kimi_prompt(
+    state: tauri::State<'_, Arc<kimi_wire::KimiWireManager>>,
+    session_id: String,
+    input: String,
+) -> Result<(), String> {
+    state.send_prompt(session_id, input)
+}
+
+#[tauri::command]
+fn respond_kimi_request(
+    state: tauri::State<'_, Arc<kimi_wire::KimiWireManager>>,
+    session_id: String,
+    request_id: String,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    state.respond(session_id, request_id, payload)
+}
+
+#[tauri::command]
+fn kill_kimi_wire(
+    state: tauri::State<'_, Arc<kimi_wire::KimiWireManager>>,
+    session_id: String,
+) -> Result<(), String> {
+    state.kill(&session_id)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(Arc::new(pty::PtyManager::new()))
+        .manage(Arc::new(kimi_wire::KimiWireManager::new()))
         .invoke_handler(tauri::generate_handler![
             spawn_agent,
+            run_agent_task,
             send_stdin,
             kill_agent,
             kill_all_agents,
             list_sessions,
             check_cli,
+            check_command,
             exec_command,
             git_branch,
             spawn_shell,
             get_language_for_file,
-            check_problems
+            check_problems,
+            detect_agents,
+            scan_skills,
+            init_kimi_wire,
+            send_kimi_prompt,
+            respond_kimi_request,
+            kill_kimi_wire
         ])
         .setup(|app| {
             let splashscreen = app.get_webview_window("splashscreen").unwrap();

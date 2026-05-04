@@ -1,4 +1,4 @@
-use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use portable_pty::{Child as PtyChild, CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -19,11 +19,34 @@ pub struct SessionExitedPayload {
 
 pub struct PtySession {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    child: Box<dyn Child + Send + Sync>,
+    child: Box<dyn PtyChild + Send + Sync>,
+}
+
+pub struct StreamSession {
+    pid: u32,
+}
+
+pub enum Session {
+    Pty(PtySession),
+    Stream(StreamSession),
 }
 
 pub struct PtyManager {
-    sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+    sessions: Arc<Mutex<HashMap<String, Session>>>,
+}
+
+#[cfg(unix)]
+fn kill_pid(pid: u32) {
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status();
+}
+
+#[cfg(windows)]
+fn kill_pid(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .status();
 }
 
 impl PtyManager {
@@ -116,10 +139,107 @@ impl PtyManager {
             .sessions
             .lock()
             .map_err(|e| e.to_string())?;
-        sessions.insert(session_id, PtySession {
+        sessions.insert(session_id, Session::Pty(PtySession {
             writer: Arc::new(Mutex::new(writer)),
             child,
+        }));
+
+        Ok(())
+    }
+
+    pub fn spawn_stream(
+        &self,
+        app: AppHandle,
+        session_id: String,
+        command: String,
+        args: Vec<String>,
+        cwd: String,
+    ) -> Result<(), String> {
+        // Kill existing session with same ID if any
+        let _ = self.kill(&session_id);
+
+        let mut cmd = std::process::Command::new(&command);
+        cmd.args(&args);
+        cmd.current_dir(&cwd);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        let pid = child.id();
+
+        let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+        let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+        let (tx, mut rx) = mpsc::channel::<String>(256);
+        let tx_err = tx.clone();
+        let sid = session_id.clone();
+
+        // Spawn a dedicated thread to read stdout
+        std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(stdout);
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                        if tx.blocking_send(text).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
         });
+
+        // Spawn a dedicated thread to read stderr
+        std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(stderr);
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                        if tx_err.blocking_send(text).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // Spawn a thread to wait on the child to avoid zombies
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+
+        // Forward chunks to the frontend via Tauri events
+        let app_clone = app.clone();
+        let sid_clone = sid.clone();
+        tokio::spawn(async move {
+            while let Some(chunk) = rx.recv().await {
+                let _ = app_clone.emit("agent-output", OutputPayload {
+                    session_id: sid_clone.clone(),
+                    chunk,
+                });
+            }
+            // Emit exit event and EOF marker
+            let _ = app_clone.emit("session-exited", SessionExitedPayload {
+                session_id: sid_clone.clone(),
+            });
+            let _ = app_clone.emit("agent-output", OutputPayload {
+                session_id: sid_clone,
+                chunk: "\n[Process exited]\n".to_string(),
+            });
+        });
+
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|e| e.to_string())?;
+        sessions.insert(session_id, Session::Stream(StreamSession { pid }));
 
         Ok(())
     }
@@ -129,7 +249,7 @@ impl PtyManager {
             .sessions
             .lock()
             .map_err(|e| e.to_string())?;
-        if let Some(session) = sessions.get(&session_id) {
+        if let Some(Session::Pty(session)) = sessions.get(&session_id) {
             let mut writer = session
                 .writer
                 .lock()
@@ -152,8 +272,11 @@ impl PtyManager {
             .sessions
             .lock()
             .map_err(|e| e.to_string())?;
-        if let Some(mut session) = sessions.remove(session_id) {
-            let _ = session.child.kill();
+        if let Some(session) = sessions.remove(session_id) {
+            match session {
+                Session::Pty(mut s) => { let _ = s.child.kill(); }
+                Session::Stream(s) => { kill_pid(s.pid); }
+            }
         }
         Ok(())
     }
@@ -163,8 +286,11 @@ impl PtyManager {
             .sessions
             .lock()
             .map_err(|e| e.to_string())?;
-        for (_, mut session) in sessions.drain() {
-            let _ = session.child.kill();
+        for (_, session) in sessions.drain() {
+            match session {
+                Session::Pty(mut s) => { let _ = s.child.kill(); }
+                Session::Stream(s) => { kill_pid(s.pid); }
+            }
         }
         Ok(())
     }

@@ -146,7 +146,7 @@ export function LeftSidebar() {
 
   const handleAgentClick = (agentId: string) => {
     setActiveAgentId(agentId);
-    openTab({ id: `agent-manager-${agentId}`, type: 'agent-manager', title: 'Agent Manager' });
+    openTab({ id: 'agent-manager', type: 'agent-manager', title: 'Agent Manager' });
   };
 
   const getTargetDir = (): string | null => {
@@ -331,7 +331,7 @@ export function LeftSidebar() {
         {activeTab === 'explorer' && (
           <div className="flex flex-col h-full animate-in fade-in-50 duration-200">
             <div className="p-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest border-b border-zinc-800/50 shrink-0 flex items-center justify-between">
-               <span className="flex items-center gap-1.5"><span className="text-[#A3E635]">#</span>Working Directory</span>
+               <span className="flex items-center gap-1.5"><span className="text-[#A3E635]"></span></span>
                <div className="flex items-center gap-1">
                  {isLoadingWorkspace && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
                  <button onClick={handleNewFile} title="New File" className="p-1 text-zinc-500 hover:text-[#A3E635] hover:bg-zinc-800 rounded-none transition-colors">

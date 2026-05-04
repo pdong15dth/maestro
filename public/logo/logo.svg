@@ -2,16 +2,12 @@
   <defs>
     <!-- Khối M nguyên khối góc cạnh -->
     <path id="maestro-m" d="M 100 280 L 100 120 L 150 120 L 200 190 L 250 120 L 300 120 L 300 280 L 250 280 L 250 190 L 200 250 L 150 190 L 150 280 Z" />
-    
+
     <!-- Lưới background mờ (Grid) đặc trưng của không gian kỹ thuật -->
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
       <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#27272A" stroke-width="1"/>
     </pattern>
   </defs>
-
-  <!-- Khối nền Dark Mode thuần túy, không có gradient -->
-  <rect width="400" height="400" rx="80" fill="#09090B" />
-  <rect x="0" y="0" width="400" height="400" rx="80" fill="url(#grid)" />
 
   <!-- Bóng đổ cứng (Hard shadow) - Màu Xanh Terminal rực rỡ -->
   <use href="#maestro-m" x="14" y="14" fill="#A3E635" />

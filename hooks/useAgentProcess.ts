@@ -63,6 +63,11 @@ export function useAgentProcess(
     await invoke('spawn_agent', { sessionId, command, args, cwd });
   }, []);
 
+  const runTask = useCallback(async (sessionId: string, command: string, args: string[], cwd: string) => {
+    setIsRunning(true);
+    await invoke('run_agent_task', { sessionId, command, args, cwd });
+  }, []);
+
   const spawnShell = useCallback(async (sessionId: string, cwd: string) => {
     setIsRunning(true);
     await invoke('spawn_shell', { sessionId, cwd });
@@ -82,5 +87,5 @@ export function useAgentProcess(
     setIsRunning(false);
   }, []);
 
-  return { spawn, spawnShell, send, kill, killAll, isRunning };
+  return { spawn, runTask, spawnShell, send, kill, killAll, isRunning };
 }

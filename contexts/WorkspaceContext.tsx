@@ -40,8 +40,9 @@ interface WorkspaceContextType {
   agents: Agent[];
   skills: Skill[];
   agentStoreReady: boolean;
-  saveAgents: (agents: Agent[]) => Promise<void>;
-  saveSkills: (skills: Skill[]) => Promise<void>;
+  saveAgentOverrides: (command: string, overrides: { args?: string[]; systemPrompt?: string; inputTemplate?: string }) => Promise<void>;
+  saveCustomAgents: (agents: Agent[]) => Promise<void>;
+  saveCustomSkills: (skills: Skill[]) => Promise<void>;
   activeAgentId: string | null;
   setActiveAgentId: (id: string | null) => void;
   // Agent messages
@@ -90,7 +91,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     deleteFile,
     renameFile,
   } = useFileSystem();
-  const { agents, skills, ready: agentStoreReady, saveAgents, saveSkills } = useAgentStore();
+  const { agents, skills, ready: agentStoreReady, refreshSkills, saveAgentOverrides, saveCustomAgents, saveCustomSkills } = useAgentStore();
+
+  // Refresh skills when workspace changes
+  useEffect(() => {
+    if (currentWorkspace) {
+      refreshSkills(currentWorkspace);
+    }
+  }, [currentWorkspace, refreshSkills]);
+
+  // Auto-select first agent when store loads and none is selected
+  useEffect(() => {
+    if (agentStoreReady && !activeAgentId && agents.length > 0) {
+      setActiveAgentId(agents[0].id);
+    }
+  }, [agentStoreReady, activeAgentId, agents]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -162,8 +177,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         agents,
         skills,
         agentStoreReady,
-        saveAgents,
-        saveSkills,
+        saveAgentOverrides,
+        saveCustomAgents,
+        saveCustomSkills,
         activeAgentId,
         setActiveAgentId,
         agentMessages,

@@ -12,9 +12,14 @@ import { AgentManager } from '@/components/AgentManager';
 import { FileViewer } from '@/components/FileViewer';
 import { AgentConsoleInput } from '@/components/AgentConsoleInput';
 import { useAgentProcess } from '@/hooks/useAgentProcess';
+import { useKimiWire } from '@/hooks/useKimiWire';
+import { KimiStatusBar } from '@/components/KimiStatusBar';
+import { ToolCallCard } from '@/components/ToolCallCard';
+import { ApprovalPrompt } from '@/components/ApprovalPrompt';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { ansiToHtml } from '@/lib/ansi';
+import { formatAgentInput, detectPlatform } from '@/lib/agent-platforms';
 import { invoke } from '@tauri-apps/api/core';
 
 interface Problem {
@@ -24,22 +29,49 @@ interface Problem {
   severity: string;
 }
 
-function AnsiMessage({ content, role }: { content: string; role: 'user' | 'agent' | 'system' }) {
-  const html = role === 'agent' ? ansiToHtml(content) : content;
+function AgentMessageRaw({ content, role, isStreaming }: { content: string; role: 'user' | 'agent' | 'system'; isStreaming?: boolean }) {
+  // Agent messages: render via ansiToHtml for colored text only (no markdown parsing)
+  if (role === 'agent') {
+    const html = ansiToHtml(content);
+    const cursorHtml = isStreaming
+      ? '<span class="inline-block w-2 h-4 bg-[#A3E635] ml-0.5 animate-[blink_1s_step-end_infinite] align-middle"></span>'
+      : '';
+    return (
+      <div
+        className="text-sm whitespace-pre-wrap leading-relaxed text-[#FAFAFA]"
+        dangerouslySetInnerHTML={{ __html: html + cursorHtml }}
+      />
+    );
+  }
+  // User / system messages
+  const html = role === 'user' ? content : ansiToHtml(content);
   return (
     <div
       className={cn(
         "text-sm whitespace-pre-wrap leading-relaxed",
-        role === 'user' ? "text-[#A3E635]" : role === 'agent' ? "text-[#FAFAFA]" : "text-zinc-500 italic"
+        role === 'user' ? "text-[#A3E635]" : "text-zinc-500 italic"
       )}
-      dangerouslySetInnerHTML={role === 'agent' ? { __html: html } : undefined}
-    >
-      {role !== 'agent' ? html : null}
-    </div>
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
 
+const AgentMessage = React.memo(AgentMessageRaw);
+
 const AGENT_SESSION_ID = 'agent';
+
+function cleanKimiOutput(chunk: string): string {
+  return chunk
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      if (t.startsWith('To resume this session')) return false;
+      if (t.startsWith('Run:')) return false;
+      if (t === '') return false;
+      return true;
+    })
+    .join('\n');
+}
 
 export default function Page() {
   const {
@@ -51,6 +83,7 @@ export default function Page() {
     setActiveTabId,
     agents,
     activeAgentId,
+    setActiveAgentId,
     agentMessages,
     setAgentMessages,
     clearAgentMessages,
@@ -89,20 +122,43 @@ export default function Page() {
   const [logs, setLogs] = useState<string[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastSpawnedAgentRef = useRef<string | null>(null);
+
   // Auto-scroll agent console
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [agentMessages]);
 
+  // Cancel pending sync interval on unmount
+  useEffect(() => {
+    return () => {
+      if (syncIntervalRef.current !== null) {
+        clearInterval(syncIntervalRef.current);
+      }
+    };
+  }, []);
+
   const handleOutput = useCallback((sessionId: string, chunk: string) => {
     if (sessionId === AGENT_SESSION_ID) {
-      setAgentMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'agent') {
-          return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
-        }
-        return [...prev, { role: 'agent', content: chunk }];
-      });
+      const agent = agents.find(a => a.id === activeAgentId);
+      const platform = agent?.platform || detectPlatform(agent?.command || '');
+      const isKimiCode = platform === 'kimi-code';
+
+      let text = chunk;
+      if (isKimiCode) {
+        text = cleanKimiOutput(chunk);
+      }
+
+      if (text) {
+        setAgentMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'agent') {
+            return [...prev.slice(0, -1), { ...last, content: last.content + text }];
+          }
+          return [...prev, { role: 'agent', content: text }];
+        });
+      }
+
       setLogs(prev => {
         const line = `[${new Date().toISOString()}] ${chunk.trim()}`;
         return [...prev, line];
@@ -119,9 +175,117 @@ export default function Page() {
         return [...prev, line];
       });
     }
+  }, [agents, activeAgentId]);
+
+  const { spawn, runTask, spawnShell, send, kill, killAll, isRunning } = useAgentProcess(handleOutput);
+
+  // Kimi Wire integration
+  const selectedAgent = agents.find(a => a.id === activeAgentId);
+  const isKimiActive = selectedAgent?.platform === 'kimi-code' || detectPlatform(selectedAgent?.command || '') === 'kimi-code';
+  console.log('[debug] activeAgentId:', activeAgentId, 'isKimiActive:', isKimiActive, 'platform:', selectedAgent?.platform);
+
+  // Streaming text accumulates in a ref and is synced to React state periodically
+  // to avoid re-rendering on every single chunk (which causes jerky text).
+  const textBufferRef = useRef('');
+  const isStreamingRef = useRef(false);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const flushTextBuffer = useCallback(() => {
+    const buffered = textBufferRef.current;
+    if (!buffered) return;
+    setAgentMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === 'agent') {
+        return [...prev.slice(0, -1), { ...last, content: buffered }];
+      }
+      return prev;
+    });
   }, []);
 
-  const { spawn, spawnShell, send, kill, killAll, isRunning } = useAgentProcess(handleOutput);
+  const kimiWire = useKimiWire(
+    AGENT_SESSION_ID,
+    // onTurnBegin
+    useCallback((input: string) => {
+      isStreamingRef.current = true;
+      textBufferRef.current = '';
+      if (syncIntervalRef.current !== null) {
+        clearInterval(syncIntervalRef.current);
+      }
+      syncIntervalRef.current = setInterval(() => {
+        flushTextBuffer();
+      }, 100);
+      setAgentMessages(prev => [...prev, { role: 'agent', content: '' }]);
+    }, [flushTextBuffer]),
+    // onTextChunk
+    useCallback((text: string) => {
+      textBufferRef.current += text;
+    }, []),
+    // onThinkChunk
+    useCallback((text: string) => {
+      textBufferRef.current += text;
+    }, []),
+    // onTurnEnd
+    useCallback(() => {
+      isStreamingRef.current = false;
+      if (syncIntervalRef.current !== null) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+      const finalContent = textBufferRef.current;
+      textBufferRef.current = '';
+      setAgentMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'agent') {
+          return [...prev.slice(0, -1), { ...last, content: finalContent }];
+        }
+        return prev;
+      });
+    }, []),
+    // onToolCall
+    useCallback((tool: { id: string; name: string; arguments?: string; result?: string }) => {
+      console.log('[Kimi Tool]', tool);
+    }, []),
+    // onApprovalRequest
+    useCallback((approval: { requestId: string; kind: string; title?: string; description?: string }) => {
+      console.log('[Kimi Approval]', approval);
+    }, [])
+  );
+
+  const isKimiRunning = isKimiActive && (kimiWire.state.status !== 'idle');
+  const agentIsRunning = isRunning || isKimiRunning;
+
+  // Auto-kill agent session when swapping to a different agent
+  useEffect(() => {
+    if (
+      agentIsRunning &&
+      activeAgentId &&
+      lastSpawnedAgentRef.current &&
+      lastSpawnedAgentRef.current !== activeAgentId
+    ) {
+      const finalContent = textBufferRef.current;
+      textBufferRef.current = '';
+      if (finalContent) {
+        setAgentMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'agent') {
+            return [...prev.slice(0, -1), { ...last, content: finalContent }];
+          }
+          return prev;
+        });
+      }
+      if (isKimiActive) {
+        kimiWire.killWire(AGENT_SESSION_ID).catch(() => {});
+      } else {
+        kill(AGENT_SESSION_ID).catch(() => {});
+      }
+      const agent = agents.find(a => a.id === activeAgentId);
+      setAgentMessages(prev => [
+        ...prev,
+        { role: 'system', content: `Swapped to ${agent?.name ?? 'new agent'}. Session reset.` },
+      ]);
+      lastSpawnedAgentRef.current = null;
+    }
+  }, [activeAgentId, agentIsRunning, agents, kill, setAgentMessages, isKimiActive, kimiWire]);
 
   const refreshGitBranch = useCallback(async () => {
     if (!currentWorkspace) return;
@@ -172,6 +336,12 @@ export default function Page() {
     let input = rawInput;
     setAgentInput('');
 
+    const agent = agents.find(a => a.id === activeAgentId);
+    const platform = agent?.platform || detectPlatform(agent?.command || '');
+
+    // Format user input according to the agent's platform behavior
+    input = formatAgentInput(platform, agent?.inputTemplate, input, agentMode);
+
     // Prepend mode instruction if this is the first user message
     const userMessages = agentMessages.filter(m => m.role === 'user');
     if (userMessages.length === 0) {
@@ -184,17 +354,45 @@ export default function Page() {
     }
 
     // Prepend system prompt if agent has one and this is first message
-    const agent = agents.find(a => a.id === activeAgentId);
     if (agent?.systemPrompt && userMessages.length === 0) {
       input = agent.systemPrompt + '\n\n' + input;
     }
 
     setAgentMessages(prev => [...prev, { role: 'user', content: rawInput }]);
 
+    if (platform === 'kimi-code') {
+      console.log('[debug] kimi submit, isReady:', kimiWire.state.isReady, 'isReadyRef:', kimiWire.isReadyRef.current);
+      try {
+        if (!kimiWire.state.isReady && currentWorkspace) {
+          await kimiWire.initWire(AGENT_SESSION_ID, currentWorkspace);
+          // Wait for initialize handshake (poll ref to avoid stale closure)
+          await new Promise<void>((resolve) => {
+            const check = setInterval(() => {
+              if (kimiWire.isReadyRef.current) {
+                clearInterval(check);
+                resolve();
+              }
+            }, 100);
+            setTimeout(() => { clearInterval(check); resolve(); }, 3000);
+          });
+        }
+        if (kimiWire.isReadyRef.current && agent) {
+          await kimiWire.sendPrompt(AGENT_SESSION_ID, input);
+          lastSpawnedAgentRef.current = agent.id;
+        } else {
+          setAgentMessages(prev => [...prev, { role: 'system', content: 'Kimi Wire failed to initialize.' }]);
+        }
+      } catch (err) {
+        setAgentMessages(prev => [...prev, { role: 'system', content: `Failed to start Kimi Wire: ${err}` }]);
+      }
+      return;
+    }
+
     if (!isRunning) {
       if (agent && currentWorkspace) {
         try {
           await spawn(AGENT_SESSION_ID, agent.command, agent.args, currentWorkspace);
+          lastSpawnedAgentRef.current = agent.id;
           await new Promise(r => setTimeout(r, 300));
         } catch (err) {
           setAgentMessages(prev => [...prev, { role: 'system', content: `Failed to start agent: ${err}` }]);
@@ -218,7 +416,23 @@ export default function Page() {
 
   const handleAgentStop = async () => {
     try {
-      await kill(AGENT_SESSION_ID);
+      // Flush any pending text before stopping so the user sees the complete output
+      const finalContent = textBufferRef.current;
+      textBufferRef.current = '';
+      if (finalContent) {
+        setAgentMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'agent') {
+            return [...prev.slice(0, -1), { ...last, content: finalContent }];
+          }
+          return prev;
+        });
+      }
+      if (isKimiActive) {
+        await kimiWire.killWire(AGENT_SESSION_ID);
+      } else {
+        await kill(AGENT_SESSION_ID);
+      }
       setAgentMessages(prev => [...prev, { role: 'system', content: 'Agent process stopped.' }]);
     } catch (err) {
       setAgentMessages(prev => [...prev, { role: 'system', content: `Failed to stop: ${err}` }]);
@@ -297,9 +511,13 @@ export default function Page() {
   };
 
   const handleNewSession = () => {
+    // session reset
     clearAgentMessages();
     if (isRunning) {
       kill(AGENT_SESSION_ID).catch(() => {});
+    }
+    if (isKimiActive) {
+      kimiWire.killWire(AGENT_SESSION_ID).catch(() => {});
     }
     setShowAgentHistory(false);
   };
@@ -340,7 +558,7 @@ export default function Page() {
     panel.style.transition = 'none';
 
     const onMouseMove = (e: MouseEvent) => {
-      const newWidth = Math.max(280, Math.min(600, startWidth + startX - e.clientX));
+      const newWidth = Math.max(420, Math.min(600, startWidth + startX - e.clientX));
       panel.style.width = `${newWidth}px`;
     };
 
@@ -409,10 +627,10 @@ export default function Page() {
         <div className="flex items-center gap-3">
           <div className={cn(
             "flex items-center gap-2 px-3 py-1 rounded-none bg-[#A3E635]/10 border border-[#A3E635]/20 text-xs font-bold tracking-wider",
-            isRunning ? "text-[#A3E635]" : "text-zinc-500"
+            agentIsRunning ? "text-[#A3E635]" : "text-zinc-500"
           )}>
-             <div className={cn("w-1.5 h-1.5 rounded-none animate-pulse", isRunning ? "bg-[#A3E635]" : "bg-zinc-600")} />
-             {isRunning ? 'Agent Running' : 'Core Online'}
+             <div className={cn("w-1.5 h-1.5 rounded-none animate-pulse", agentIsRunning ? "bg-[#A3E635]" : "bg-zinc-600")} />
+             {agentIsRunning ? 'Agent Running' : 'Core Online'}
           </div>
           <button
             onClick={() => setIsRightPanelOpen(!isRightPanelOpen)}
@@ -592,6 +810,7 @@ export default function Page() {
                </button>
              </div>
 
+             {isKimiActive && <KimiStatusBar state={kimiWire.state} />}
              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-[#09090B] relative">
                <AnimatePresence>
                  {showAgentHistory && (
@@ -639,12 +858,44 @@ export default function Page() {
                  )}
                </AnimatePresence>
 
-                {agentMessages.map((msg, i) => (
-                  <div key={i} className="text-sm">
-                    {msg.role === 'user' ? <div className="font-semibold text-xs mb-1 text-[#A3E635]">User</div> : msg.role === 'agent' ? <div className="font-semibold text-xs mb-1 text-[#A3E635]">Agent</div> : null}
-                    <AnsiMessage content={msg.content} role={msg.role} />
-                  </div>
-                ))}
+                {(() => {
+                  return agentMessages.map((msg, i) => {
+                    const isLast = i === agentMessages.length - 1;
+                    const isStreaming = isLast && agentIsRunning && msg.role === 'agent';
+                    const label = msg.role === 'user' ? <div className="font-semibold text-xs mb-1 text-[#A3E635]">User</div> : msg.role === 'agent' ? <div className="font-semibold text-xs mb-1 text-[#A3E635]">Agent</div> : null;
+                    const inner = (
+                      <>
+                        {label}
+                        <AgentMessage content={msg.content} role={msg.role} isStreaming={isStreaming} />
+                        {isKimiActive && msg.role === 'agent' && isLast && (
+                          <>
+                            <ToolCallCard tools={kimiWire.state.toolCalls} />
+                            <ApprovalPrompt
+                              approvals={kimiWire.state.pendingApprovals}
+                              onApprove={(id) => kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'approve' })}
+                              onReject={(id) => kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'reject' })}
+                            />
+                          </>
+                        )}
+                      </>
+                    );
+                    // Skip motion animation for the streaming message to avoid framer-motion overhead
+                    if (isStreaming) {
+                      return <div key={i} className="text-sm">{inner}</div>;
+                    }
+                    return (
+                      <motion.div
+                        key={i}
+                        className="text-sm"
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.25, ease: 'easeOut' }}
+                      >
+                        {inner}
+                      </motion.div>
+                    );
+                  });
+                })()}
                 <div ref={messagesEndRef} />
              </div>
 
@@ -654,7 +905,7 @@ export default function Page() {
                  onChange={setAgentInput}
                  onSubmit={handleAgentSubmit}
                  onStop={handleAgentStop}
-                 isRunning={isRunning}
+                 isRunning={agentIsRunning}
                  mode={agentMode}
                  onModeChange={setAgentMode}
                  onOpenSettings={() => setShowSettings(true)}
