@@ -7,7 +7,7 @@ import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { LeftSidebar } from '@/components/LeftSidebar';
 import { SettingsModal } from '@/components/SettingsModal';
 import { WorkspaceFooter } from '@/components/WorkspaceFooter';
-import { useWorkspace, ChatMessage } from '@/contexts/WorkspaceContext';
+import { useWorkspace, ChatMessage, MessageBlock } from '@/contexts/WorkspaceContext';
 import { AgentManager } from '@/components/AgentManager';
 import { FileViewer } from '@/components/FileViewer';
 import { AgentConsoleInput } from '@/components/AgentConsoleInput';
@@ -18,6 +18,27 @@ import { ToolCallCard } from '@/components/ToolCallCard';
 import { ApprovalPrompt } from '@/components/ApprovalPrompt';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+function ThinkingBlock({ thinking }: { thinking: string }) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <div className="space-y-1">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-[10px] text-zinc-500 uppercase tracking-wider hover:text-zinc-400 transition-colors"
+      >
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        Reasoning
+      </button>
+      {expanded && (
+        <div className="text-zinc-500 italic whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 max-h-48 overflow-y-auto text-xs leading-relaxed">
+          {thinking}
+        </div>
+      )}
+    </div>
+  );
+}
 import { ansiToHtml, containsAnsi, normalizePtyText } from '@/lib/ansi';
 import { formatAgentInput, detectPlatform } from '@/lib/agent-platforms';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
@@ -49,11 +70,7 @@ function AgentMessageRaw({ content, role, isStreaming, thinking }: { content: st
 
   return (
     <div className="text-sm leading-relaxed space-y-2">
-      {thinking && (
-        <div className="text-zinc-500 italic whitespace-pre-wrap border-l-2 border-zinc-700 pl-3">
-          {thinking}
-        </div>
-      )}
+      {thinking && <ThinkingBlock thinking={thinking} />}
       {hasAnsi ? (
         <div className="text-[#FAFAFA] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: ansiToHtml(content) }} />
       ) : (
@@ -119,7 +136,7 @@ export default function Page() {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [leftPanelWidth, setLeftPanelWidth] = useState(260);
-  const [rightPanelWidth, setRightPanelWidth] = useState(380);
+  const [rightPanelWidth, setRightPanelWidth] = useState(420);
 
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -337,7 +354,6 @@ export default function Page() {
   const thinkBufferRef = useRef('');
   const isStreamingRef = useRef(false);
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const thinkSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const flushTextBuffer = useCallback(() => {
     const buffered = textBufferRef.current;
@@ -346,11 +362,19 @@ export default function Page() {
     setAgentMessages(prev => {
       const last = prev[prev.length - 1];
       if (last && last.role === 'agent') {
-        // After TurnEnd the buffer is cleared, so new text should append to existing content
         const newContent = last.content && !buffered.startsWith(last.content)
           ? last.content + buffered
           : buffered;
-        return [...prev.slice(0, -1), { ...last, content: newContent }];
+        const delta = newContent.slice(last.content.length);
+        if (!delta) return prev;
+        const blocks: MessageBlock[] = last.blocks ? [...last.blocks] : [];
+        const lastBlock = blocks[blocks.length - 1];
+        if (lastBlock && lastBlock.type === 'text') {
+          blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + delta };
+        } else {
+          blocks.push({ type: 'text', content: delta });
+        }
+        return [...prev.slice(0, -1), { ...last, content: newContent, blocks }];
       }
       return prev;
     });
@@ -363,10 +387,11 @@ export default function Page() {
     setAgentMessages(prev => {
       const last = prev[prev.length - 1];
       if (last && last.role === 'agent') {
-        // After TurnEnd the buffer is cleared, so new thinking should append to existing
         const newThinking = last.thinking && !buffered.startsWith(last.thinking)
           ? last.thinking + buffered
           : buffered;
+        const delta = newThinking.slice(last.thinking?.length || 0);
+        if (!delta) return prev;
         return [...prev.slice(0, -1), { ...last, thinking: newThinking }];
       }
       return prev;
@@ -383,13 +408,8 @@ export default function Page() {
       if (syncIntervalRef.current !== null) {
         clearInterval(syncIntervalRef.current);
       }
-      if (thinkSyncIntervalRef.current !== null) {
-        clearInterval(thinkSyncIntervalRef.current);
-      }
       syncIntervalRef.current = setInterval(() => {
         flushTextBuffer();
-      }, 30);
-      thinkSyncIntervalRef.current = setInterval(() => {
         flushThinkBuffer();
       }, 30);
       setAgentMessages(prev => [...prev, { role: 'agent', content: '', thinking: '' }]);
@@ -398,59 +418,73 @@ export default function Page() {
     useCallback((text: string) => {
       textBufferRef.current += text;
       console.log('[KW-APPROVAL] onTextChunk text len=', text.length, 'total=', textBufferRef.current.length);
-      // If the sync interval was stopped (e.g. after TurnEnd), restart it so
-      // late-arriving text still gets flushed into React state.
       if (syncIntervalRef.current === null) {
         syncIntervalRef.current = setInterval(() => {
           flushTextBuffer();
+          flushThinkBuffer();
         }, 30);
       }
-    }, [flushTextBuffer]),
+    }, [flushTextBuffer, flushThinkBuffer]),
     // onThinkChunk
     useCallback((text: string) => {
       thinkBufferRef.current += text;
       console.log('[KW-APPROVAL] onThinkChunk text len=', text.length, 'total=', thinkBufferRef.current.length);
-      if (thinkSyncIntervalRef.current === null) {
-        thinkSyncIntervalRef.current = setInterval(() => {
+      if (syncIntervalRef.current === null) {
+        syncIntervalRef.current = setInterval(() => {
+          flushTextBuffer();
           flushThinkBuffer();
         }, 30);
       }
-    }, [flushThinkBuffer]),
+    }, [flushTextBuffer, flushThinkBuffer]),
     // onTurnEnd
     useCallback(() => {
       console.log('[KW-APPROVAL] onTurnEnd flushing final content');
       isStreamingRef.current = false;
+      flushTextBuffer();
+      flushThinkBuffer();
       if (syncIntervalRef.current !== null) {
         clearInterval(syncIntervalRef.current);
         syncIntervalRef.current = null;
       }
-      if (thinkSyncIntervalRef.current !== null) {
-        clearInterval(thinkSyncIntervalRef.current);
-        thinkSyncIntervalRef.current = null;
-      }
-      const finalContent = textBufferRef.current;
-      const finalThinking = thinkBufferRef.current;
       textBufferRef.current = '';
       thinkBufferRef.current = '';
-      setAgentMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'agent') {
-          // Merge any live tool calls from wire state into the persisted message
-          return [...prev.slice(0, -1), { ...last, content: finalContent, thinking: finalThinking }];
-        }
-        return prev;
-      });
-    }, []),
+    }, [flushTextBuffer, flushThinkBuffer]),
     // onToolCall
     useCallback((tool: { id: string; name: string; arguments?: string; result?: string }) => {
       console.log('[Kimi Tool]', tool);
-      // Append tool call to the current agent message so it persists in history
+      flushTextBuffer();
       setAgentMessages(prev => {
         const last = prev[prev.length - 1];
         if (last && last.role === 'agent') {
           const existing = last.toolCalls || [];
           if (existing.some(t => t.id === tool.id)) return prev; // avoid dup
-          return [...prev.slice(0, -1), { ...last, toolCalls: [...existing, tool] }];
+          const blocks: MessageBlock[] = last.blocks ? [...last.blocks] : [];
+          if (blocks.length === 0 && last.content) {
+            blocks.push({ type: 'text', content: last.content });
+          }
+          blocks.push({ type: 'tool', tool });
+          return [...prev.slice(0, -1), { ...last, toolCalls: [...existing, tool], blocks }];
+        }
+        return prev;
+      });
+    }, [flushTextBuffer]),
+    // onToolResult
+    useCallback((toolId: string, result: string) => {
+      console.log('[Kimi ToolResult]', toolId, result.slice(0, 200));
+      setAgentMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'agent' && last.toolCalls) {
+          const updatedToolCalls = last.toolCalls.map(t =>
+            t.id === toolId ? { ...t, result } : t
+          );
+          const blocks = last.blocks?.map(b =>
+            b.type === 'tool' && b.tool.id === toolId
+              ? { ...b, tool: { ...b.tool, result } }
+              : b
+          );
+          if (updatedToolCalls.some((t, i) => t.result !== last.toolCalls![i].result)) {
+            return [...prev.slice(0, -1), { ...last, toolCalls: updatedToolCalls, blocks }];
+          }
         }
         return prev;
       });
@@ -458,6 +492,27 @@ export default function Page() {
     // onApprovalRequest
     useCallback((approval: { requestId: string; kind: string; title?: string; description?: string }) => {
       console.log('[Kimi Approval]', approval);
+    }, []),
+    // onToolCallUpdate
+    useCallback((toolId: string, args: string) => {
+      console.log('[Kimi ToolCallUpdate]', toolId, args);
+      setAgentMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'agent' && last.toolCalls) {
+          const updatedToolCalls = last.toolCalls.map(t =>
+            t.id === toolId ? { ...t, arguments: args } : t
+          );
+          const hasChange = updatedToolCalls.some((t, i) => t.arguments !== last.toolCalls![i].arguments);
+          if (!hasChange) return prev;
+          const blocks = last.blocks?.map(b =>
+            b.type === 'tool' && b.tool.id === toolId
+              ? { ...b, tool: { ...b.tool, arguments: args } }
+              : b
+          );
+          return [...prev.slice(0, -1), { ...last, toolCalls: updatedToolCalls, blocks }];
+        }
+        return prev;
+      });
     }, [])
   );
 
@@ -1103,37 +1158,56 @@ export default function Page() {
                     const inner = (
                       <>
                         {label}
-                        <AgentMessage content={msg.content} role={msg.role} isStreaming={isStreaming} thinking={msg.thinking} />
-                        {msg.role === 'agent' && (msg.toolCalls || []).length > 0 && (
+                        {msg.role === 'agent' && msg.blocks && msg.blocks.length > 0 ? (
+                          <div className="space-y-2">
+                            {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
+                            {msg.blocks.map((block, bi) => {
+                              if (block.type === 'text') {
+                                const isLastBlock = bi === msg.blocks!.length - 1;
+                                return (
+                                  <AgentMessage
+                                    key={bi}
+                                    content={block.content}
+                                    role={msg.role}
+                                    isStreaming={isStreaming && isLastBlock}
+                                  />
+                                );
+                              }
+                              if (block.type === 'tool') {
+                                return <ToolCallCard key={bi} tools={[block.tool]} />;
+                              }
+                              return null;
+                            })}
+                          </div>
+                        ) : (
+                          <AgentMessage content={msg.content} role={msg.role} isStreaming={isStreaming} thinking={msg.thinking} />
+                        )}
+                        {/* Fallback for legacy messages without blocks */}
+                        {msg.role === 'agent' && (!msg.blocks || msg.blocks.length === 0) && (msg.toolCalls || []).length > 0 && (
                           <ToolCallCard tools={msg.toolCalls!} />
                         )}
                         {isKimiActive && msg.role === 'agent' && isLast && (
-                          <>
-                            {kimiWire.state.toolCalls.length > 0 && (
-                              <ToolCallCard tools={kimiWire.state.toolCalls} />
-                            )}
-                            <ApprovalPrompt
-                              approvals={kimiWire.state.pendingApprovals}
-                              onApprove={async (id) => {
-                                try {
-                                  await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'approve' });
-                                  console.log('[Approval] approved', id);
-                                } catch (err) {
-                                  console.error('[Approval] approve failed', err);
-                                  setAgentMessages(prev => [...prev, { role: 'system', content: `Approval failed: ${err}` }]);
-                                }
-                              }}
-                              onReject={async (id) => {
-                                try {
-                                  await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'reject' });
-                                  console.log('[Approval] rejected', id);
-                                } catch (err) {
-                                  console.error('[Approval] reject failed', err);
-                                  setAgentMessages(prev => [...prev, { role: 'system', content: `Rejection failed: ${err}` }]);
-                                }
-                              }}
-                            />
-                          </>
+                          <ApprovalPrompt
+                            approvals={kimiWire.state.pendingApprovals}
+                            onApprove={async (id) => {
+                              try {
+                                await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'approve' });
+                                console.log('[Approval] approved', id);
+                              } catch (err) {
+                                console.error('[Approval] approve failed', err);
+                                setAgentMessages(prev => [...prev, { role: 'system', content: `Approval failed: ${err}` }]);
+                              }
+                            }}
+                            onReject={async (id) => {
+                              try {
+                                await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'reject' });
+                                console.log('[Approval] rejected', id);
+                              } catch (err) {
+                                console.error('[Approval] reject failed', err);
+                                setAgentMessages(prev => [...prev, { role: 'system', content: `Rejection failed: ${err}` }]);
+                              }
+                            }}
+                          />
                         )}
                       </>
                     );

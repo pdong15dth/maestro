@@ -71,7 +71,9 @@ export function useKimiWire(
   onThinkChunk?: (text: string) => void,
   onTurnEnd?: () => void,
   onToolCall?: (tool: KimiToolCall) => void,
+  onToolResult?: (toolId: string, result: string) => void,
   onApprovalRequest?: (approval: KimiApproval) => void,
+  onToolCallUpdate?: (toolId: string, args: string) => void,
 ) {
   const [state, setState] = useState<KimiWireState>({
     status: 'idle',
@@ -85,6 +87,8 @@ export function useKimiWire(
   // Keep streaming text in refs to avoid re-rendering the hook on every chunk
   const currentMessageRef = useRef('');
   const thinkingContentRef = useRef('');
+  const currentToolCallIdRef = useRef('');
+  const toolCallArgsBufferRef = useRef('');
 
   const isReadyRef = useRef(false);
 
@@ -179,11 +183,20 @@ export function useKimiWire(
         case 'ToolCall': {
           const p = payload as Record<string, unknown>;
           console.log('[KW-APPROVAL] ToolCall raw payload=', JSON.stringify(p));
+          console.log('[KW-APPROVAL] ToolCall payload keys=', Object.keys(p));
           const funcObj = (p as Record<string, unknown>).function as Record<string, unknown> | undefined;
+          if (funcObj) {
+            console.log('[KW-APPROVAL] ToolCall funcObj keys=', Object.keys(funcObj));
+          }
           const toolId = (p.id as string) || (p.toolCallId as string) || (p.tool_id as string) || '';
           const toolName = (p.name as string) || (p.tool_name as string) || (funcObj?.name as string) || '';
           let toolArgs: string | undefined;
-          const rawArgs = p.arguments ?? (funcObj?.arguments as string) ?? p.args ?? p.input ?? undefined;
+          let rawArgs = p.arguments ?? (funcObj?.arguments as string) ?? p.args ?? p.input ?? undefined;
+          // If p.arguments is an empty string, try funcObj.arguments instead
+          if (typeof rawArgs === 'string' && rawArgs.trim() === '') {
+            rawArgs = (funcObj?.arguments as string) ?? p.args ?? p.input ?? undefined;
+          }
+          console.log('[KW-APPROVAL] ToolCall rawArgs=', rawArgs, 'typeof=', typeof rawArgs);
           if (rawArgs !== undefined) {
             toolArgs = typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs);
           }
@@ -193,13 +206,32 @@ export function useKimiWire(
             arguments: toolArgs,
             result: (p.result as string) || undefined,
           };
-          console.log('[KW-APPROVAL] ToolCall resolved id=', tool.id, 'name=', tool.name);
+          currentToolCallIdRef.current = toolId;
+          toolCallArgsBufferRef.current = toolArgs || '';
+          console.log('[KW-APPROVAL] ToolCall resolved id=', tool.id, 'name=', tool.name, 'args=', toolArgs);
           setState((prev) => ({
             ...prev,
             status: 'tool_call',
             toolCalls: [...prev.toolCalls, tool],
           }));
           onToolCall?.(tool);
+          break;
+        }
+        case 'ToolCallPart': {
+          const p = payload as Record<string, unknown>;
+          const part = (p.arguments_part as string) || '';
+          if (!part) break;
+          toolCallArgsBufferRef.current += part;
+          const updatedArgs = toolCallArgsBufferRef.current;
+          const targetId = currentToolCallIdRef.current;
+          console.log('[KW-APPROVAL] ToolCallPart part=', part, 'accumulated=', updatedArgs, 'targetId=', targetId);
+          setState((prev) => ({
+            ...prev,
+            toolCalls: prev.toolCalls.map((t) =>
+              t.id === targetId ? { ...t, arguments: updatedArgs } : t
+            ),
+          }));
+          onToolCallUpdate?.(targetId, updatedArgs);
           break;
         }
         case 'ToolResult': {
@@ -230,11 +262,12 @@ export function useKimiWire(
               ),
             };
           });
+          onToolResult?.(toolId, result);
           break;
         }
         case 'TurnEnd':
         case 'StepInterrupted': {
-          setState((prev) => ({ ...prev, status: 'idle', toolCalls: [], pendingApprovals: [] }));
+          setState((prev) => ({ ...prev, status: 'idle', pendingApprovals: [] }));
           onTurnEnd?.();
           break;
         }
@@ -341,7 +374,7 @@ export function useKimiWire(
       unlistenResponseRef.current?.();
       unlistenStderrRef.current?.();
     };
-  }, [sessionId, onTurnBegin, onTextChunk, onThinkChunk, onTurnEnd, onToolCall, onApprovalRequest]);
+  }, [sessionId, onTurnBegin, onTextChunk, onThinkChunk, onTurnEnd, onToolCall, onToolResult, onApprovalRequest]);
 
   const initWire = useCallback(async (sid: string, cwd: string) => {
     isReadyRef.current = false;

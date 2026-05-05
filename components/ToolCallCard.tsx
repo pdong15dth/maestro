@@ -24,38 +24,45 @@ function getToolSummary(tool: KimiToolCall): string {
     const args = JSON.parse(tool.arguments);
     switch (tool.name) {
       case 'Shell': {
-        const cmd = args.command || args.cmd || args.shell || '';
+        const cmd = args.command || args.cmd || args.shell || args.exec || '';
         const first = cmd.split('\n')[0];
         return first.length > 120 ? first.slice(0, 120) + '…' : first;
       }
       case 'ReadFile':
       case 'WriteFile':
       case 'StrReplaceFile': {
-        const path = args.path || args.file || args.filePath || '';
+        const path = args.path || args.file || args.filePath || args.filepath || args.filename || args.file_name || args.target || '';
         return path ? `${tool.name}: ${path}` : tool.name;
       }
       case 'Glob': {
-        const pattern = args.pattern || args.glob || '';
+        const pattern = args.pattern || args.glob || args.search || '';
         return pattern ? `Glob: ${pattern}` : tool.name;
       }
       case 'Grep': {
-        const pattern = args.pattern || args.query || '';
-        const path = args.path || '';
+        const pattern = args.pattern || args.query || args.q || args.search || '';
+        const path = args.path || args.file || args.dir || '';
         return pattern ? `Grep: "${pattern}"${path ? ` in ${path}` : ''}` : tool.name;
       }
       case 'SearchWeb': {
-        const query = args.query || args.q || '';
+        const query = args.query || args.q || args.search || '';
         return query ? `Web: ${query}` : tool.name;
       }
       case 'FetchURL': {
-        const url = args.url || '';
+        const url = args.url || args.link || args.href || '';
         return url ? `Fetch: ${url}` : tool.name;
       }
       default:
         return tool.name;
     }
   } catch {
-    return tool.name;
+    // Fallback: try regex extraction from raw JSON string
+    const raw = tool.arguments;
+    const pathMatch = raw.match(/"path"\s*:\s*"([^"]+)"/);
+    const fileMatch = raw.match(/"file"\s*:\s*"([^"]+)"/);
+    const cmdMatch = raw.match(/"command"\s*:\s*"([^"]+)"/);
+    const urlMatch = raw.match(/"url"\s*:\s*"([^"]+)"/);
+    const fallback = pathMatch?.[1] || fileMatch?.[1] || cmdMatch?.[1] || urlMatch?.[1];
+    return fallback ? `${tool.name}: ${fallback}` : tool.name;
   }
 }
 
@@ -79,6 +86,8 @@ function SingleToolCard({ tool }: { tool: KimiToolCall }) {
   const summary = useMemo(() => getToolSummary(tool), [tool]);
   const isRunning = !tool.result;
   const isShell = tool.name === 'Shell';
+  // Debug: log arguments to console so we can inspect what Kimi CLI sends
+  console.log('[ToolCallCard] name=', tool.name, 'args=', tool.arguments, 'summary=', summary);
 
   return (
     <div className={cn(
@@ -124,9 +133,11 @@ function SingleToolCard({ tool }: { tool: KimiToolCall }) {
             command={(() => {
               try {
                 const args = JSON.parse(tool.arguments);
-                return args.command || args.cmd || args.shell || '';
+                return args.command || args.cmd || args.shell || args.exec || '';
               } catch {
-                return '';
+                const raw = tool.arguments;
+                const cmdMatch = raw.match(/"command"\s*:\s*"([^"]+)"/);
+                return cmdMatch?.[1] || '';
               }
             })()}
             isRunning={isRunning}

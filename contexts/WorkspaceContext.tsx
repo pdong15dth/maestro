@@ -51,11 +51,17 @@ interface WorkspaceContextType {
   clearAgentMessages: () => void;
 }
 
+export type MessageBlock =
+  | { type: 'text'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'tool'; tool: { id: string; name: string; arguments?: string; result?: string } };
+
 export interface ChatMessage {
   role: 'user' | 'agent' | 'system';
   content: string;
   thinking?: string;
   toolCalls?: { id: string; name: string; arguments?: string; result?: string }[];
+  blocks?: MessageBlock[];
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
