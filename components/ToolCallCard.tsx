@@ -84,7 +84,7 @@ function SingleToolCard({ tool }: { tool: KimiToolCall }) {
   const [expanded, setExpanded] = useState(false);
   const icon = toolIcons[tool.name] || <Terminal className="w-3.5 h-3.5" />;
   const summary = useMemo(() => getToolSummary(tool), [tool]);
-  const isRunning = !tool.result;
+  const isRunning = tool.result === undefined;
   const isShell = tool.name === 'Shell';
   // Debug: log arguments to console so we can inspect what Kimi CLI sends
   console.log('[ToolCallCard] name=', tool.name, 'args=', tool.arguments, 'summary=', summary);

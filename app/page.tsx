@@ -1190,18 +1190,20 @@ export default function Page() {
                           <ApprovalPrompt
                             approvals={kimiWire.state.pendingApprovals}
                             onApprove={async (id) => {
+                              console.log('[Approval] clicking approve for', id);
                               try {
                                 await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'approve' });
-                                console.log('[Approval] approved', id);
+                                console.log('[Approval] approved successfully', id);
                               } catch (err) {
                                 console.error('[Approval] approve failed', err);
                                 setAgentMessages(prev => [...prev, { role: 'system', content: `Approval failed: ${err}` }]);
                               }
                             }}
                             onReject={async (id) => {
+                              console.log('[Approval] clicking reject for', id);
                               try {
                                 await kimiWire.respondRequest(AGENT_SESSION_ID, id, { decision: 'reject' });
-                                console.log('[Approval] rejected', id);
+                                console.log('[Approval] rejected successfully', id);
                               } catch (err) {
                                 console.error('[Approval] reject failed', err);
                                 setAgentMessages(prev => [...prev, { role: 'system', content: `Rejection failed: ${err}` }]);

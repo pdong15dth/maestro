@@ -314,7 +314,7 @@ impl KimiWireManager {
 
         let msg = JsonRpcMessage {
             jsonrpc: "2.0".to_string(),
-            id: Some(Value::String(request_id)),
+            id: Some(Value::String(request_id.clone())),
             method: None,
             params: None,
             result: Some(payload),
@@ -322,9 +322,11 @@ impl KimiWireManager {
         };
 
         let json = serde_json::to_string(&msg).unwrap();
+        eprintln!("[KW-BACKEND] respond request_id={} json={}", request_id, json);
         let mut w = session.writer.lock().map_err(|e| e.to_string())?;
         writeln!(w, "{}", json).map_err(|e| e.to_string())?;
         w.flush().map_err(|e| e.to_string())?;
+        eprintln!("[KW-BACKEND] respond flushed request_id={}", request_id);
 
         Ok(())
     }

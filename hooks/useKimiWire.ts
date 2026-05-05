@@ -287,7 +287,7 @@ export function useKimiWire(
           break;
         }
         default:
-          // Ignore unknown events silently
+          console.log('[KW-APPROVAL] Unknown event type=', eventType, 'payload=', JSON.stringify(payload));
           break;
       }
     };
